@@ -21,6 +21,8 @@ The MVP runs through Docker Compose:
 
 The commit-facing architecture notes live in [ARCHITECTURE.md](ARCHITECTURE.md). The working requirements/spec notes live under `.kiro/specs/backend-architecture-playground`, which is intentionally ignored from commits.
 
+For a short container and port reference, use [STACK.md](STACK.md).
+
 ## Prerequisites
 
 Install:
