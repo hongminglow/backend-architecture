@@ -18,7 +18,7 @@ The MVP runs through Docker Compose:
 - `prometheus` and `grafana`: local observability stack.
 - `stress-tests`: k6 scenarios for mixed order traffic, login pressure, and rate-limit validation.
 
-The supporting architecture notes live in [.kiro/specs/backend-architecture-playground/architecture-decisions.md](.kiro/specs/backend-architecture-playground/architecture-decisions.md). The requirements live in [.kiro/specs/backend-architecture-playground/requirements.md](.kiro/specs/backend-architecture-playground/requirements.md).
+The commit-facing architecture notes live in [ARCHITECTURE.md](ARCHITECTURE.md). The working requirements/spec notes live under `.kiro/specs/backend-architecture-playground`, which is intentionally ignored from commits.
 
 ## Prerequisites
 
