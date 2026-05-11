@@ -16,6 +16,30 @@ services:
     networks:
       - playground
 
+  pgbouncer:
+    build:
+      context: ./pgbouncer
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-backend_playground}
+      POSTGRES_USER: ${POSTGRES_USER:-playground}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-CHANGE_ME_POSTGRES_PASSWORD}
+      PGBOUNCER_MAX_CLIENT_CONN: ${PGBOUNCER_MAX_CLIENT_CONN:-1000}
+      PGBOUNCER_DEFAULT_POOL_SIZE: ${PGBOUNCER_DEFAULT_POOL_SIZE:-40}
+      PGBOUNCER_MIN_POOL_SIZE: ${PGBOUNCER_MIN_POOL_SIZE:-5}
+      PGBOUNCER_RESERVE_POOL_SIZE: ${PGBOUNCER_RESERVE_POOL_SIZE:-10}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "6432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - playground
+
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-CHANGE_ME_REDIS_PASSWORD}"]
@@ -51,7 +75,7 @@ services:
       NODE_ENV: production
       LOG_LEVEL: ${LOG_LEVEL:-info}
       API_PORT: 3000
-      DATABASE_URL: ${DATABASE_URL:-postgres://playground:CHANGE_ME_POSTGRES_PASSWORD@postgres:5432/backend_playground}
+      DATABASE_URL: ${API_DATABASE_URL:-postgres://playground:CHANGE_ME_POSTGRES_PASSWORD@pgbouncer:6432/backend_playground}
       REDIS_URL: ${REDIS_URL:-redis://:CHANGE_ME_REDIS_PASSWORD@redis:6379}
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-CHANGE_ME_ACCESS_SECRET_AT_LEAST_32_CHARS}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-CHANGE_ME_REFRESH_SECRET_AT_LEAST_32_CHARS}
@@ -69,7 +93,7 @@ services:
       AUTH_FAILED_LOGIN_ACCOUNT_WINDOW_SECONDS: ${AUTH_FAILED_LOGIN_ACCOUNT_WINDOW_SECONDS:-900}
       AUTH_ACCOUNT_LOCK_SECONDS: ${AUTH_ACCOUNT_LOCK_SECONDS:-900}
     depends_on:
-      postgres:
+      pgbouncer:
         condition: service_healthy
       redis:
         condition: service_healthy

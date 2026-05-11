@@ -12,6 +12,7 @@ The MVP runs through Docker Compose:
 - `outbox-publisher`: polls committed Postgres outbox rows and publishes `order.created` events to RabbitMQ.
 - `worker-service`: consumes `order.created` events, performs simulated notification work, and records idempotency in Postgres.
 - `reverse-proxy`: HAProxy using least-connections load balancing and active health checks.
+- `pgbouncer`: transaction-pooling layer used by API replicas before Postgres.
 - `postgres`: transactional datastore, refresh token store, outbox store, and worker idempotency store.
 - `redis`: read-through order cache and distributed rate-limit counters.
 - `rabbitmq`: message broker for asynchronous order-created processing.
@@ -77,6 +78,131 @@ Local URLs:
 - RabbitMQ management: `http://localhost:15672` (`playground` / `CHANGE_ME_RABBITMQ_PASSWORD`)
 - Prometheus: `http://localhost:9090`
 - Grafana: `http://localhost:3001` (`admin` / `admin`)
+
+Generate seed orders for testing:
+
+```powershell
+pnpm run seed:orders -- --orders 1000 --concurrency 25
+```
+
+## Database Access
+
+Postgres runs inside Docker Compose as the `postgres` service.
+
+- Container name: `infra-postgres-1`
+- Internal Docker host: `postgres`
+- Internal Docker port: `5432`
+- Database: `backend_playground`
+- User: `playground`
+- Password: `CHANGE_ME_POSTGRES_PASSWORD`
+- Persistent Docker volume: `infra_postgres-data`
+
+PgBouncer runs inside Docker Compose as the `pgbouncer` service.
+
+- Container name: `infra-pgbouncer-1`
+- Internal Docker host: `pgbouncer`
+- Internal Docker port: `6432`
+- Pool mode: `transaction`
+- Used by: `api-service` replicas
+
+Postgres and PgBouncer are **not exposed on `localhost` by default**. That is intentional. API replicas connect to PgBouncer inside the Docker network using:
+
+```text
+postgres://playground:CHANGE_ME_POSTGRES_PASSWORD@pgbouncer:6432/backend_playground
+```
+
+Background services that need direct database behavior, such as the outbox publisher and worker idempotency writes, connect to Postgres inside the Docker network using:
+
+```text
+postgres://playground:CHANGE_ME_POSTGRES_PASSWORD@postgres:5432/backend_playground
+```
+
+View table counts:
+
+```powershell
+docker compose -f infra/docker-compose.yml exec -T postgres `
+  psql -U playground -d backend_playground `
+  -c "select 'users' as table_name, count(*) from users union all select 'orders', count(*) from orders union all select 'outbox_events', count(*) from outbox_events union all select 'processed_events', count(*) from processed_events union all select 'refresh_tokens', count(*) from refresh_tokens order by table_name;"
+```
+
+View latest orders:
+
+```powershell
+docker compose -f infra/docker-compose.yml exec -T postgres `
+  psql -U playground -d backend_playground `
+  -c "select id, customer_email, total_cents, status, created_at from orders order by created_at desc limit 10;"
+```
+
+Open an interactive SQL shell:
+
+```powershell
+docker compose -f infra/docker-compose.yml exec postgres `
+  psql -U playground -d backend_playground
+```
+
+View PgBouncer pools:
+
+```powershell
+docker compose -f infra/docker-compose.yml exec -T -e PGPASSWORD=CHANGE_ME_POSTGRES_PASSWORD pgbouncer `
+  psql -h 127.0.0.1 -p 6432 -U playground -d pgbouncer `
+  -c "show pools;"
+```
+
+If you want to connect from a GUI client such as DBeaver, DataGrip, or TablePlus, add a temporary port mapping to the `postgres` service in `infra/docker-compose.yml`:
+
+```yaml
+ports:
+  - "5432:5432"
+```
+
+Then connect to:
+
+- Host: `localhost`
+- Port: `5432`
+- Database: `backend_playground`
+- User: `playground`
+- Password: `CHANGE_ME_POSTGRES_PASSWORD`
+
+To connect through PgBouncer from a GUI client instead, add this temporary port mapping to the `pgbouncer` service:
+
+```yaml
+ports:
+  - "6432:6432"
+```
+
+Then connect to `localhost:6432` with the same database, user, and password.
+
+## Seeding Test Data
+
+The seed script creates orders through the public API instead of inserting directly into Postgres. That matters because it exercises authentication, HAProxy routing, API validation, Postgres writes, transactional outbox creation, RabbitMQ publishing, and worker consumption.
+
+Create 1,000 orders:
+
+```powershell
+pnpm run seed:orders -- --orders 1000 --concurrency 25
+```
+
+Create 10,000 orders:
+
+```powershell
+pnpm run seed:orders -- --orders 10000 --concurrency 50
+```
+
+Options:
+
+- `--base-url`: API base URL, default `http://localhost:8080`
+- `--orders`: number of orders to create, default `1000`
+- `--concurrency`: number of concurrent create-order workers, default `25`
+- `--email`: seed user email, default `seed@example.com`
+- `--password`: seed user password, default `correct-horse-battery-staple`
+
+After seeding, check row counts:
+
+```powershell
+docker compose -f infra/docker-compose.yml exec -T postgres `
+  psql -U playground -d backend_playground `
+  -c "select count(*) as orders from orders; select count(*) as unpublished_outbox_events from outbox_events where published_at is null; select count(*) as processed_events from processed_events;"
+```
 
 ## Step-by-Step API Test
 

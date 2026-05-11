@@ -1,0 +1,20 @@
+[databases]
+${POSTGRES_DB} = host=postgres port=5432 dbname=${POSTGRES_DB} user=${POSTGRES_USER} password=${POSTGRES_PASSWORD}
+
+[pgbouncer]
+listen_addr = 0.0.0.0
+listen_port = 6432
+auth_type = plain
+auth_file = /tmp/userlist.txt
+pool_mode = transaction
+max_client_conn = ${PGBOUNCER_MAX_CLIENT_CONN}
+default_pool_size = ${PGBOUNCER_DEFAULT_POOL_SIZE}
+min_pool_size = ${PGBOUNCER_MIN_POOL_SIZE}
+reserve_pool_size = ${PGBOUNCER_RESERVE_POOL_SIZE}
+server_reset_query = DISCARD ALL
+ignore_startup_parameters = extra_float_digits
+admin_users = ${POSTGRES_USER}
+stats_users = ${POSTGRES_USER}
+pidfile = /tmp/pgbouncer.pid
+log_connections = 1
+log_disconnections = 1

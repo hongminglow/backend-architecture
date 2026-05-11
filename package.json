@@ -14,6 +14,7 @@
     "test": "pnpm -r run test",
     "verify": "pnpm run typecheck && pnpm run lint && pnpm run test",
     "audit": "pnpm audit --audit-level high",
+    "seed:orders": "node scripts/seed-orders.mjs",
     "stack:up": "node scripts/stack-up.mjs",
     "stack:down": "node scripts/stack-down.mjs"
   },

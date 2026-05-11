@@ -8,6 +8,7 @@ Backend Architecture Playground is a local-first backend lab for scaling and res
 
 - HTTP auth and order APIs through Fastify.
 - Horizontal API replicas behind HAProxy.
+- PgBouncer transaction pooling between API replicas and Postgres.
 - Postgres as the transactional datastore.
 - Redis for read-through caching and distributed rate limiting.
 - Transactional outbox rows for reliable event publication.
@@ -20,11 +21,12 @@ Backend Architecture Playground is a local-first backend lab for scaling and res
 
 1. A client sends traffic to HAProxy on `http://localhost:8080`.
 2. HAProxy uses least-connections balancing across healthy `api-service` replicas.
-3. `api-service` validates requests with zod, applies Redis-backed rate limits, and persists order data to Postgres.
-4. When an order is created, `api-service` writes the order and an `order.created` outbox row in the same Postgres transaction.
-5. `outbox-publisher` polls unpublished outbox rows, publishes them to RabbitMQ, and marks them published after broker confirmation.
-6. `worker-service` consumes RabbitMQ messages, records `eventId` in Postgres for idempotency, and simulates notification work.
-7. Prometheus scrapes service metrics and Grafana provisions local dashboards.
+3. `api-service` validates requests with zod, applies Redis-backed rate limits, and connects to Postgres through PgBouncer.
+4. PgBouncer reuses a smaller set of Postgres backend connections for API traffic.
+5. When an order is created, `api-service` writes the order and an `order.created` outbox row in the same Postgres transaction.
+6. `outbox-publisher` polls unpublished outbox rows, publishes them to RabbitMQ, and marks them published after broker confirmation.
+7. `worker-service` consumes RabbitMQ messages, records `eventId` in Postgres for idempotency, and simulates notification work.
+8. Prometheus scrapes service metrics and Grafana provisions local dashboards.
 
 ## Accepted Decisions
 
@@ -84,6 +86,21 @@ Backend Architecture Playground is a local-first backend lab for scaling and res
 - **Why:** AWS is useful for enterprise coverage but introduces account setup, cost, quota, and teardown concerns.
 - **Alternatives:** EKS is useful but heavier. EC2 adds server management. SQS may be useful but changes RabbitMQ semantics.
 - **Verification:** A future AWS phase must include infrastructure-as-code, cost guardrails, teardown commands, and CloudWatch checks.
+
+### ADR-0009: Add PgBouncer for API Database Pooling
+
+- **Decision:** Put PgBouncer between `api-service` replicas and Postgres, using transaction pooling. Keep `outbox-publisher` and `worker-service` on direct Postgres connections for simpler background processing semantics.
+- **Why:** With horizontal replicas, each Node process has its own `pg` pool. Four API replicas with pool size 20 can already reserve up to 80 Postgres connections before background services are counted. PgBouncer lets the API accept many client-side database sessions while reusing a smaller backend connection pool.
+- **Alternatives:** Direct Postgres pools are simpler and fine for the first smoke test, but they hide an important scaling bottleneck. Putting all services behind PgBouncer is possible, but the outbox publisher has explicit transaction/locking behavior and benefits from direct visibility during early MVP work.
+- **Tradeoff:** Adds one infrastructure container and another config surface. In return, API replica scaling is closer to enterprise deployment practice.
+- **Verification:** `api-service` uses `pgbouncer:6432`; PgBouncer `show pools;` reports API pool activity; the stack still starts with 1 and 4 API replicas.
+
+### ADR-0010: Seed Through the Public API
+
+- **Decision:** Add `pnpm run seed:orders` to create large numbers of orders through the public API.
+- **Why:** Load data should exercise the same path users and tests use: HAProxy, auth, API validation, Postgres writes, outbox publication, RabbitMQ, and worker idempotency.
+- **Alternatives:** Direct SQL inserts would be faster, but they would bypass the outbox and worker path. A custom DB fixture loader may still be useful later for low-level database tests.
+- **Verification:** Seeding increases `orders`, drains unpublished outbox rows, and increases `processed_events`.
 
 ## Current Local Verification
 

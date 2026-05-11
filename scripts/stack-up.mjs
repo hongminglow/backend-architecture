@@ -48,6 +48,7 @@ function allRequiredHealthy(containers) {
     "outbox-publisher",
     "worker-service",
     "postgres",
+    "pgbouncer",
     "redis",
     "rabbitmq",
     "reverse-proxy",
