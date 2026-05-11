@@ -1,0 +1,56 @@
+{
+  "title": "Service Health",
+  "schemaVersion": 40,
+  "version": 1,
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "API RPS",
+      "targets": [
+        {
+          "expr": "sum(rate(api_service_http_requests_total[1m]))",
+          "legendFormat": "api rps"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "API p95 Latency",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(api_service_http_request_duration_seconds_bucket[1m])) by (le))",
+          "legendFormat": "p95"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Outbox Backlog",
+      "targets": [
+        {
+          "expr": "outbox_publisher_unpublished_events",
+          "legendFormat": "unpublished"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Worker Processed Messages",
+      "targets": [
+        {
+          "expr": "sum(rate(worker_service_messages_processed_total[1m])) by (result)",
+          "legendFormat": "{{result}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 }
+    }
+  ]
+}

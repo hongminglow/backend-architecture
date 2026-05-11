@@ -1,0 +1,216 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-backend_playground}
+      POSTGRES_USER: ${POSTGRES_USER:-playground}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-CHANGE_ME_POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - playground
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-CHANGE_ME_REDIS_PASSWORD}"]
+    healthcheck:
+      test:
+        ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD:-CHANGE_ME_REDIS_PASSWORD} ping | grep PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - playground
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-playground}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-CHANGE_ME_RABBITMQ_PASSWORD}
+    ports:
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - playground
+
+  api-service:
+    build:
+      context: ..
+      dockerfile: packages/api-service/Dockerfile
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      API_PORT: 3000
+      DATABASE_URL: ${DATABASE_URL:-postgres://playground:CHANGE_ME_POSTGRES_PASSWORD@postgres:5432/backend_playground}
+      REDIS_URL: ${REDIS_URL:-redis://:CHANGE_ME_REDIS_PASSWORD@redis:6379}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-CHANGE_ME_ACCESS_SECRET_AT_LEAST_32_CHARS}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-CHANGE_ME_REFRESH_SECRET_AT_LEAST_32_CHARS}
+      ACCESS_TOKEN_TTL_SECONDS: ${ACCESS_TOKEN_TTL_SECONDS:-900}
+      REFRESH_TOKEN_TTL_SECONDS: ${REFRESH_TOKEN_TTL_SECONDS:-604800}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080}
+      CACHE_ENABLED: ${CACHE_ENABLED:-true}
+      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-60}
+      CACHE_TIMEOUT_MS: ${CACHE_TIMEOUT_MS:-200}
+      RATE_LIMIT_REQUESTS: ${RATE_LIMIT_REQUESTS:-100}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
+      AUTH_FAILED_LOGIN_IP_LIMIT: ${AUTH_FAILED_LOGIN_IP_LIMIT:-10}
+      AUTH_FAILED_LOGIN_IP_WINDOW_SECONDS: ${AUTH_FAILED_LOGIN_IP_WINDOW_SECONDS:-60}
+      AUTH_FAILED_LOGIN_ACCOUNT_LIMIT: ${AUTH_FAILED_LOGIN_ACCOUNT_LIMIT:-5}
+      AUTH_FAILED_LOGIN_ACCOUNT_WINDOW_SECONDS: ${AUTH_FAILED_LOGIN_ACCOUNT_WINDOW_SECONDS:-900}
+      AUTH_ACCOUNT_LOCK_SECONDS: ${AUTH_ACCOUNT_LOCK_SECONDS:-900}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "3000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - playground
+
+  outbox-publisher:
+    build:
+      context: ..
+      dockerfile: packages/outbox-publisher/Dockerfile
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      OUTBOX_PORT: 3001
+      DATABASE_URL: ${DATABASE_URL:-postgres://playground:CHANGE_ME_POSTGRES_PASSWORD@postgres:5432/backend_playground}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://playground:CHANGE_ME_RABBITMQ_PASSWORD@rabbitmq:5672}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-orders}
+      OUTBOX_BATCH_SIZE: ${OUTBOX_BATCH_SIZE:-100}
+      OUTBOX_POLL_INTERVAL_MS: ${OUTBOX_POLL_INTERVAL_MS:-1000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    expose:
+      - "3001"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3001/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - playground
+
+  worker-service:
+    build:
+      context: ..
+      dockerfile: packages/worker-service/Dockerfile
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      WORKER_PORT: 3002
+      DATABASE_URL: ${DATABASE_URL:-postgres://playground:CHANGE_ME_POSTGRES_PASSWORD@postgres:5432/backend_playground}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://playground:CHANGE_ME_RABBITMQ_PASSWORD@rabbitmq:5672}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-orders}
+      RABBITMQ_ORDER_CREATED_QUEUE: ${RABBITMQ_ORDER_CREATED_QUEUE:-order.created}
+      WORKER_PROCESSING_TIMEOUT_MS: ${WORKER_PROCESSING_TIMEOUT_MS:-30000}
+      WORKER_RETRY_DELAY_MS: ${WORKER_RETRY_DELAY_MS:-5000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    expose:
+      - "3002"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3002/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - playground
+
+  reverse-proxy:
+    image: haproxy:2.9-alpine
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    ports:
+      - "${PUBLIC_HTTP_PORT:-8080}:8080"
+      - "8404:8404"
+    depends_on:
+      api-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - playground
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    networks:
+      - playground
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - playground
+
+networks:
+  playground:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  prometheus-data:
+  grafana-data:

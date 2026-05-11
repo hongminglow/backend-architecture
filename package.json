@@ -1,0 +1,28 @@
+{
+  "name": "backend-architecture-playground",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first backend architecture playground for scaling, resilience, and observability experiments.",
+  "packageManager": "pnpm@9.15.4",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "pnpm -r --filter @backend-architect/shared --filter @backend-architect/api-service --filter @backend-architect/outbox-publisher --filter @backend-architect/worker-service run build",
+    "typecheck": "pnpm --filter @backend-architect/shared run build && pnpm -r --filter @backend-architect/api-service --filter @backend-architect/outbox-publisher --filter @backend-architect/worker-service run typecheck",
+    "lint": "pnpm -r --filter @backend-architect/shared --filter @backend-architect/api-service --filter @backend-architect/outbox-publisher --filter @backend-architect/worker-service run lint",
+    "test": "pnpm -r run test",
+    "verify": "pnpm run typecheck && pnpm run lint && pnpm run test",
+    "audit": "pnpm audit --audit-level high",
+    "stack:up": "node scripts/stack-up.mjs",
+    "stack:down": "node scripts/stack-down.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/node": "^22.10.2",
+    "eslint": "^9.39.1",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.2"
+  }
+}

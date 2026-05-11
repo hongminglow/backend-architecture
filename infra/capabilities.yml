@@ -1,0 +1,6 @@
+customApplicationContainers:
+  default: drop-all
+  readd: []
+
+officialInfrastructureContainers:
+  policy: prefer-non-root-and-drop-capabilities-when-supported-by-official-image

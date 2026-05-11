@@ -1,0 +1,13 @@
+node_modules/
+dist/
+reports/
+bun.lock
+.env
+.env.*.local
+.DS_Store
+*.log
+
+# Agent Skills
+skills/
+.sisyphus/*
+.kiro/*

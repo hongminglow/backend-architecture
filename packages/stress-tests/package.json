@@ -1,0 +1,12 @@
+{
+  "name": "@backend-architect/stress-tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "mixed-orders": "k6 run scenarios/mixed-orders.js",
+    "login-storm": "k6 run scenarios/login-storm.js",
+    "rate-limit-abuse": "k6 run scenarios/rate-limit-abuse.js"
+  }
+}

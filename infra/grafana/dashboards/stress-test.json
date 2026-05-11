@@ -1,0 +1,32 @@
+{
+  "title": "Stress Test",
+  "schemaVersion": 40,
+  "version": 1,
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "HTTP Throughput",
+      "targets": [
+        {
+          "expr": "sum(rate(api_service_http_requests_total[1m])) by (status_code)",
+          "legendFormat": "{{status_code}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "HTTP Error Rate",
+      "targets": [
+        {
+          "expr": "sum(rate(api_service_http_requests_total{status_code=~\"5..\"}[1m])) / sum(rate(api_service_http_requests_total[1m]))",
+          "legendFormat": "5xx ratio"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }
+    }
+  ]
+}
