@@ -29,12 +29,6 @@ function parseInteger(raw, name) {
   return value;
 }
 
-function seedIp(index) {
-  const third = Math.floor(index / 250) % 250;
-  const fourth = index % 250;
-  return `10.77.${third}.${fourth}`;
-}
-
 async function request(path, options = {}) {
   const response = await fetch(`${config.baseUrl}${path}`, options);
   const text = await response.text();
@@ -61,7 +55,7 @@ async function authenticate() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Forwarded-For": "10.77.255.1",
+        "X-Load-Test-Client-Id": "seed-auth-register",
       },
       body: JSON.stringify(body),
     });
@@ -76,7 +70,7 @@ async function authenticate() {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Forwarded-For": "10.77.255.2",
+      "X-Load-Test-Client-Id": "seed-auth-login",
     },
     body: JSON.stringify(body),
   });
@@ -109,7 +103,7 @@ async function createOrder(index, accessToken) {
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${accessToken}`,
-      "X-Forwarded-For": seedIp(index),
+      "X-Load-Test-Client-Id": `seed-order-${index}`,
     },
     body: JSON.stringify(orderBody(index)),
   });

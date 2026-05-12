@@ -16,7 +16,15 @@
     "audit": "pnpm audit --audit-level high",
     "seed:orders": "node scripts/seed-orders.mjs",
     "stack:up": "node scripts/stack-up.mjs",
-    "stack:down": "node scripts/stack-down.mjs"
+    "stack:down": "node scripts/stack-down.mjs",
+    "migrate": "node scripts/migrate.mjs",
+    "test:integration": "node --test packages/integration-tests/tests/*.mjs",
+    "stress:mixed": "pnpm --filter @backend-architect/stress-tests run mixed-orders",
+    "stress:login": "pnpm --filter @backend-architect/stress-tests run login-storm",
+    "stress:rate-limit": "pnpm --filter @backend-architect/stress-tests run rate-limit-abuse"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

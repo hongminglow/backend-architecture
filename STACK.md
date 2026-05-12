@@ -22,15 +22,17 @@ docker compose -f infra/docker-compose.yml ps
 
 ## Public Localhost Ports
 
-| Local URL                     | Service                   | Use                    |
-| ----------------------------- | ------------------------- | ---------------------- |
-| `http://localhost:8080`       | `reverse-proxy` / HAProxy | Main API entrypoint    |
-| `http://localhost:8404/stats` | `reverse-proxy` / HAProxy | HAProxy stats page     |
-| `http://localhost:15672`      | `rabbitmq`                | RabbitMQ management UI |
-| `http://localhost:9090`       | `prometheus`              | Metrics query UI       |
-| `http://localhost:3001`       | `grafana`                 | Dashboards             |
+| Local URL                     | Service                   | Use                          |
+| ----------------------------- | ------------------------- | ---------------------------- |
+| `http://localhost:8080`       | `reverse-proxy` / HAProxy | Main API entrypoint          |
+| `http://localhost:8404/stats` | `reverse-proxy` / HAProxy | HAProxy stats page           |
+| `127.0.0.1:15432`             | `postgres`                | Direct local SQL access      |
+| `127.0.0.1:16432`             | `pgbouncer`               | SQL access through PgBouncer |
+| `http://localhost:15672`      | `rabbitmq`                | RabbitMQ management UI       |
+| `http://localhost:9090`       | `prometheus`              | Metrics query UI             |
+| `http://localhost:3001`       | `grafana`                 | Dashboards                   |
 
-Postgres, PgBouncer, Redis, API replicas, outbox publisher, and worker service are not exposed on localhost by default. They communicate through the Docker network.
+Redis, API replicas, outbox publisher, and worker service are not exposed on localhost by default. They communicate through the Docker network.
 
 ## Docker Services
 
@@ -38,8 +40,8 @@ Postgres, PgBouncer, Redis, API replicas, outbox publisher, and worker service a
 | ------------------ | ----------------------- | --------------------------- | ------------------------------------------------------------------------------------------- |
 | `reverse-proxy`    | `reverse-proxy:8080`    | `8080`, `8404`              | HAProxy entrypoint, health checks, least-connections load balancing to API replicas         |
 | `api-service`      | `api-service:3000`      | Not exposed                 | Fastify HTTP API for auth and orders. Scales with `--replicas 1` or `--replicas 4`          |
-| `pgbouncer`        | `pgbouncer:6432`        | Not exposed                 | Transaction pooler used by `api-service` before Postgres                                    |
-| `postgres`         | `postgres:5432`         | Not exposed                 | Main database for users, orders, refresh tokens, outbox events, and processed worker events |
+| `pgbouncer`        | `pgbouncer:6432`        | `127.0.0.1:16432`           | Transaction pooler used by `api-service` before Postgres                                    |
+| `postgres`         | `postgres:5432`         | `127.0.0.1:15432`           | Main database for users, orders, refresh tokens, outbox events, and processed worker events |
 | `redis`            | `redis:6379`            | Not exposed                 | Cache and distributed rate-limit counters                                                   |
 | `rabbitmq`         | `rabbitmq:5672`         | `15672` for management only | Broker for `order.created` events                                                           |
 | `outbox-publisher` | `outbox-publisher:3001` | Not exposed                 | Publishes committed outbox events from Postgres to RabbitMQ                                 |

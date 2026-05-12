@@ -31,6 +31,8 @@ const config = {
   queue: process.env.RABBITMQ_ORDER_CREATED_QUEUE ?? "order.created",
   processingTimeoutMs: optionalIntEnv("WORKER_PROCESSING_TIMEOUT_MS", 30_000),
   retryDelayMs: optionalIntEnv("WORKER_RETRY_DELAY_MS", 5000),
+  prefetch: optionalIntEnv("WORKER_PREFETCH", 20),
+  maxRetries: optionalIntEnv("WORKER_MAX_RETRIES", 3),
 };
 
 const pool = new Pool({ connectionString: config.databaseUrl, max: 5 });
@@ -75,6 +77,13 @@ const processingDuration = new Histogram({
 const inFlightGauge = new Gauge({
   name: "worker_service_in_flight_messages",
   help: "Messages currently being processed by the worker.",
+  registers: [register],
+});
+
+const deadLetteredMessages = new Counter({
+  name: "worker_service_dead_lettered_total",
+  help: "Total messages moved to the dead-letter queue.",
+  labelNames: ["event_type"],
   registers: [register],
 });
 
@@ -135,7 +144,8 @@ async function setupRabbit(): Promise<Channel> {
     },
   });
   await activeChannel.assertQueue(deadLetterQueue(), { durable: true });
-  await activeChannel.prefetch(20);
+  await activeChannel.prefetch(config.prefetch);
+  logger.info({ prefetch: config.prefetch }, "RabbitMQ channel configured with prefetch");
   return activeChannel;
 }
 
@@ -203,10 +213,18 @@ async function handleMessage(message: ConsumeMessage | null): Promise<void> {
   const started = process.hrtime.bigint();
   let eventType = "unknown";
 
+  const headers = message.properties.headers ?? {};
+  const correlationId =
+    typeof headers["x-correlation-id"] === "string"
+      ? headers["x-correlation-id"]
+      : (message.properties.messageId ?? "unknown");
+  const messageLogger = logger.child({ correlationId });
+
   try {
     const event = parseEvent(message);
     eventType = event.eventType;
     consumedMessages.inc({ event_type: eventType });
+    messageLogger.info({ eventId: event.eventId, orderId: event.orderId }, "Processing message");
     const result = await withProcessingTimeout(processEvent(event));
     processedMessages.inc({ event_type: eventType, result });
     processingDuration.observe(
@@ -214,11 +232,16 @@ async function handleMessage(message: ConsumeMessage | null): Promise<void> {
       Number(process.hrtime.bigint() - started) / 1_000_000_000,
     );
     channel.ack(message);
+    messageLogger.info({ eventId: event.eventId, result }, "Message processed");
   } catch (error) {
     failedMessages.inc({ event_type: eventType });
     processingDuration.observe(
       { event_type: eventType, result: "failed" },
       Number(process.hrtime.bigint() - started) / 1_000_000_000,
+    );
+    messageLogger.error(
+      { err: error instanceof Error ? error.message : String(error) },
+      "Message processing failed",
     );
     await requeueOrDeadLetter(message, error);
   } finally {
@@ -232,22 +255,26 @@ async function requeueOrDeadLetter(message: ConsumeMessage, error: unknown): Pro
     return;
   }
 
-  const headers = message.properties.headers ?? {};
+  const headers: Record<string, unknown> = { ...(message.properties.headers ?? {}) };
   const retryCount = Number(headers["x-retry-count"] ?? 0);
-  const nextHeaders = {
+  const nextHeaders: Record<string, unknown> = {
     ...headers,
     "x-retry-count": retryCount + 1,
     "x-last-error": error instanceof Error ? error.message : String(error),
   };
 
-  if (retryCount >= 2) {
+  if (retryCount >= config.maxRetries) {
     channel.sendToQueue(deadLetterQueue(), message.content, {
       ...message.properties,
       headers: nextHeaders,
       persistent: true,
     });
     channel.ack(message);
-    logger.error({ retryCount }, "Message moved to dead-letter queue");
+    deadLetteredMessages.inc({ event_type: String(nextHeaders["x-event-type"] ?? "unknown") });
+    logger.error(
+      { retryCount, maxRetries: config.maxRetries },
+      "Message moved to dead-letter queue after exhausting retries",
+    );
     return;
   }
 
@@ -318,29 +345,39 @@ app.get("/metrics", async (_request, reply) => {
   return register.metrics();
 });
 
-async function shutdown(): Promise<void> {
+async function shutdown(signal: string): Promise<void> {
   shuttingDown = true;
+  logger.info({ signal }, "Graceful shutdown initiated — cancelling consumer");
+
   if (channel && consumerTag) {
     await channel.cancel(consumerTag).catch(() => undefined);
   }
 
   const stopAt = Date.now() + 30_000;
   while (inFlight > 0 && Date.now() < stopAt) {
-    await delay(100);
+    logger.info({ inFlight }, "Draining in-flight messages");
+    await delay(250);
+  }
+
+  if (inFlight > 0) {
+    logger.warn({ inFlight }, "Drain timeout reached — forcing shutdown with in-flight messages");
+  } else {
+    logger.info("All in-flight messages drained successfully");
   }
 
   await app.close();
   await channel?.close().catch(() => undefined);
   await connection?.close().catch(() => undefined);
   await pool.end();
+  logger.info("Worker service shutdown complete");
 }
 
 process.on("SIGTERM", () => {
-  void shutdown().then(() => process.exit(0));
+  void shutdown("SIGTERM").then(() => process.exit(0));
 });
 
 process.on("SIGINT", () => {
-  void shutdown().then(() => process.exit(0));
+  void shutdown("SIGINT").then(() => process.exit(0));
 });
 
 await app.listen({ host: "0.0.0.0", port: config.port });

@@ -1,0 +1,10 @@
+{
+  "name": "@backend-architect/integration-tests",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Integration tests that run against a live Docker Compose stack.",
+  "type": "module",
+  "dependencies": {
+    "pg": "^8.13.1"
+  }
+}

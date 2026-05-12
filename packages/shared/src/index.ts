@@ -13,6 +13,7 @@ export interface OrderCreatedEvent {
   eventType: "order.created";
   orderId: string;
   occurredAt: string;
+  correlationId?: string;
 }
 
 export const serviceNames = {

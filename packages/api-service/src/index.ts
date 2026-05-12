@@ -22,6 +22,7 @@ declare module "fastify" {
       id: string;
       email: string;
     };
+    correlationId?: string;
   }
 }
 
@@ -66,6 +67,11 @@ const config = {
   failedLoginAccountLimit: optionalIntEnv("AUTH_FAILED_LOGIN_ACCOUNT_LIMIT", 5),
   failedLoginAccountWindowSeconds: optionalIntEnv("AUTH_FAILED_LOGIN_ACCOUNT_WINDOW_SECONDS", 900),
   accountLockSeconds: optionalIntEnv("AUTH_ACCOUNT_LOCK_SECONDS", 900),
+  shutdownDrainMs: optionalIntEnv("SHUTDOWN_DRAIN_MS", 30_000),
+  allowLoadTestClientIdentity: optionalBoolEnv("ALLOW_LOAD_TEST_CLIENT_IDENTITY", true),
+  loadTestClientIdHeader: (
+    process.env.LOAD_TEST_CLIENT_ID_HEADER ?? "x-load-test-client-id"
+  ).toLowerCase(),
   corsAllowedOrigins: (process.env.CORS_ALLOWED_ORIGINS ?? "")
     .split(",")
     .map((origin) => origin.trim())
@@ -82,6 +88,9 @@ const redis = new Redis(config.redisUrl, {
 redis.on("error", (error: Error) => {
   warnOncePerMinute("redis", "Redis connection error", error);
 });
+
+let shuttingDown = false;
+let activeRequests = 0;
 
 const register = new Registry();
 collectDefaultMetrics({ register, prefix: "api_service_" });
@@ -207,6 +216,13 @@ function normalizeZodError(error: z.ZodError): string {
 }
 
 function getClientIdentifier(request: FastifyRequest): string {
+  if (config.allowLoadTestClientIdentity) {
+    const loadTestClientId = request.headers[config.loadTestClientIdHeader];
+    if (typeof loadTestClientId === "string" && loadTestClientId.trim()) {
+      return `load-test:${loadTestClientId.trim().slice(0, 128)}`;
+    }
+  }
+
   const xForwardedFor = request.headers["x-forwarded-for"];
   if (typeof xForwardedFor === "string" && xForwardedFor.trim()) {
     return xForwardedFor.split(",")[0]?.trim() || request.ip;
@@ -344,14 +360,32 @@ await app.register(cors, {
 });
 
 app.addHook("onRequest", async (request, reply) => {
+  if (shuttingDown) {
+    reply
+      .code(503)
+      .send({ error: { code: "SERVICE_UNAVAILABLE", message: "Server is shutting down" } });
+    return;
+  }
+
+  activeRequests += 1;
   requestStart.set(request, process.hrtime.bigint());
   inFlight.inc();
+
+  const correlationId =
+    typeof request.headers["x-correlation-id"] === "string" &&
+    request.headers["x-correlation-id"].length <= 128
+      ? request.headers["x-correlation-id"]
+      : request.id;
+  request.correlationId = correlationId;
   reply.header("X-Request-Id", request.id);
+  reply.header("X-Correlation-Id", correlationId);
+  request.log = logger.child({ correlationId, requestId: request.id });
 });
 
 app.addHook("preHandler", enforceRateLimit);
 
 app.addHook("onResponse", async (request, reply) => {
+  activeRequests -= 1;
   inFlight.dec();
   const start = requestStart.get(request);
   if (!start) {
@@ -608,7 +642,13 @@ app.post("/v1/orders", { preHandler: authenticate }, async (request, reply) => {
       [
         eventId,
         orderId,
-        JSON.stringify({ eventId, eventType: "order.created", orderId, occurredAt }),
+        JSON.stringify({
+          eventId,
+          eventType: "order.created",
+          orderId,
+          occurredAt,
+          correlationId: request.correlationId ?? request.id,
+        }),
         occurredAt,
       ],
     );
@@ -737,19 +777,41 @@ app.setErrorHandler((error, request, reply) => {
   });
 });
 
-const shutdown = async (): Promise<void> => {
-  logger.info("Shutting down API service");
+const shutdown = async (signal: string): Promise<void> => {
+  if (shuttingDown) {
+    return;
+  }
+
+  shuttingDown = true;
+  logger.info({ signal }, "Graceful shutdown initiated — stopping new request acceptance");
+
+  const drainDeadline = Date.now() + config.shutdownDrainMs;
+  while (activeRequests > 0 && Date.now() < drainDeadline) {
+    logger.info({ activeRequests }, "Draining in-flight requests");
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  if (activeRequests > 0) {
+    logger.warn(
+      { activeRequests },
+      "Drain timeout reached — forcing shutdown with in-flight requests",
+    );
+  } else {
+    logger.info("All in-flight requests drained successfully");
+  }
+
   await app.close();
   await pool.end();
   redis.disconnect();
+  logger.info("API service shutdown complete");
 };
 
 process.on("SIGTERM", () => {
-  void shutdown().then(() => process.exit(0));
+  void shutdown("SIGTERM").then(() => process.exit(0));
 });
 
 process.on("SIGINT", () => {
-  void shutdown().then(() => process.exit(0));
+  void shutdown("SIGINT").then(() => process.exit(0));
 });
 
 await app.listen({ host: "0.0.0.0", port: config.port });

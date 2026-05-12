@@ -69,7 +69,7 @@ Backend Architecture Playground is a local-first backend lab for scaling and res
 ### ADR-0006: Separate Benchmark and Abuse-Control Scenarios
 
 - **Decision:** `mixed-orders` and `login-storm` are benchmark scenarios. `rate-limit-abuse` directly tests rate-limit behavior.
-- **Why:** If default rate limits trigger during benchmark runs, the benchmark measures protection settings instead of service scaling.
+- **Why:** If default rate limits trigger during benchmark runs, the benchmark measures protection settings instead of service scaling. HAProxy overwrites `X-Forwarded-For`, so deterministic test identities use the explicit `X-Load-Test-Client-Id` header when `ALLOW_LOAD_TEST_CLIENT_IDENTITY=true`.
 - **Alternatives:** Disabling rate limits everywhere loses coverage. Leaving defaults active everywhere creates misleading failures.
 - **Verification:** Benchmark scripts use deterministic virtual client identities; `rate-limit-abuse` validates HTTP 429 and headers.
 
@@ -102,6 +102,48 @@ Backend Architecture Playground is a local-first backend lab for scaling and res
 - **Alternatives:** Direct SQL inserts would be faster, but they would bypass the outbox and worker path. A custom DB fixture loader may still be useful later for low-level database tests.
 - **Verification:** Seeding increases `orders`, drains unpublished outbox rows, and increases `processed_events`.
 
+### ADR-0011: Graceful Shutdown with In-Flight Request Drain
+
+- **Decision:** All three services implement structured graceful shutdown. The API rejects new requests with HTTP 503 during shutdown and drains in-flight requests up to a configurable timeout (`SHUTDOWN_DRAIN_MS`, default 30 s). The worker cancels its consumer and waits for in-flight messages to complete. The outbox publisher lets the current poll cycle finish.
+- **Why:** Scaling replicas from 1 to 4 and back requires deterministic behavior during container stops. Dropping in-flight work silently contradicts the playground's scaling and resilience claims.
+- **Alternatives:** Immediate `process.exit()` is simpler but drops work. Fixed sleep is unreliable under variable load.
+- **Verification:** `SIGTERM` during active load produces structured drain logs. Accepted requests complete successfully. Worker messages either finish or are requeued by RabbitMQ.
+
+### ADR-0012: Dead Letter Queue with Bounded Retry Strategy
+
+- **Decision:** The worker uses a three-tier message lifecycle: primary queue → retry queue (with TTL and dead-letter exchange back to primary) → dead letter queue. Failed messages are retried up to `WORKER_MAX_RETRIES` (default 3, configurable) with `x-retry-count` and `x-last-error` headers. A `worker_service_dead_lettered_total` Prometheus counter tracks DLQ volume.
+- **Why:** Without bounded retries, a poison message either blocks the consumer indefinitely or is silently lost. Both behaviors make the async pipeline unreliable.
+- **Alternatives:** RabbitMQ native DLX is automatic but provides less control over retry metadata. Discarding failures is simpler but loses data.
+- **Verification:** Malformed messages retry up to the configured limit, then appear in the DLQ with correct error context headers.
+
+### ADR-0013: Database Migration Strategy with Version Tracking
+
+- **Decision:** A `schema_migrations` table tracks applied migrations by version, description, and checksum. A runner script reads numbered SQL files from `infra/postgres/migrations/`, applies new ones in order within a transaction, and records them. The runner connects directly to Postgres (not PgBouncer) for DDL safety.
+- **Why:** The init script only runs on first container creation. Schema evolution after initial setup requires either volume destruction or manual SQL. Neither is acceptable for enterprise backend practices.
+- **Alternatives:** `node-pg-migrate` adds a dependency. Prisma couples to an ORM. Manual SQL is not auditable.
+- **Verification:** `pnpm run migrate` applies only new migrations and records them. Repeated runs are idempotent, and checksum drift in already-applied migration files fails the run.
+
+### ADR-0014: Distributed Correlation IDs Across Service Boundaries
+
+- **Decision:** The API reads or generates an `X-Correlation-Id` on each request, attaches it to the response and log context, and stores it in the outbox payload for created orders. The outbox publisher attaches that value as a RabbitMQ `x-correlation-id` message header. The worker reads it from the message and creates a child logger with the correlation ID. This enables end-to-end log search across all three services for a single business operation.
+- **Why:** A request flows through 7+ components. Without a shared identifier, correlating logs across services requires timestamp guesswork.
+- **Alternatives:** OpenTelemetry is richer but adds infrastructure. Fastify's `requestId` does not cross broker boundaries.
+- **Verification:** Created order outbox payloads contain the API response correlation ID, and searching all service logs for that ID returns entries from the API, outbox publisher, and worker.
+
+### ADR-0015: Integration Test Harness for Cross-Service Verification
+
+- **Decision:** Add `packages/integration-tests/` with test scripts that run against a live Docker Compose stack. Tests verify end-to-end paths: order lifecycle with outbox and worker, DLQ behavior, cache hit/miss/invalidation, and rate-limit enforcement.
+- **Why:** k6 tests validate throughput and TypeScript validates types, but neither catches cross-service integration regressions.
+- **Alternatives:** Unit tests with mocks are faster but cannot verify real integration. Contract tests verify shape but not data flow.
+- **Verification:** `pnpm run test:integration` passes against a healthy stack with 1 API replica.
+
+### ADR-0016: Configurable Worker Backpressure via Prefetch Tuning
+
+- **Decision:** The worker's RabbitMQ prefetch count is configurable via `WORKER_PREFETCH` (default 20). The value is logged at channel setup. This controls how many unacknowledged messages the worker holds, directly affecting throughput and memory pressure.
+- **Why:** Hardcoded prefetch prevents tuning for different processing speeds and worker counts.
+- **Alternatives:** Dynamic prefetch adjustment is sophisticated but unjustified for the MVP.
+- **Verification:** The `worker_service_in_flight_messages` gauge never exceeds the configured prefetch. Changing the value visibly affects throughput.
+
 ## Current Local Verification
 
 The MVP has been verified locally with:
@@ -114,6 +156,10 @@ The MVP has been verified locally with:
 - API smoke flow: readiness, register, create order, cache miss/hit, patch status, refresh token.
 - Outbox/worker flow: unpublished outbox count drains to zero and worker records `order.created` processing.
 - Rate-limit behavior: 100 successful requests followed by HTTP 429 responses.
+- Graceful shutdown: `SIGTERM` during active load produces structured drain logs and accepted requests complete.
+- Dead letter queue: malformed messages retry up to the configured limit and appear in the DLQ.
+- Correlation IDs: `X-Correlation-Id` appears in API responses, is stored in outbox payloads, and is propagated to worker logs through RabbitMQ headers.
+- Backpressure: `worker_service_in_flight_messages` gauge stays within the configured prefetch limit.
 
 ## References
 
@@ -124,3 +170,5 @@ The MVP has been verified locally with:
 - Amazon MQ: https://aws.amazon.com/amazon-mq/features/
 - Amazon CloudWatch: https://aws.amazon.com/documentation-overview/cloudwatch/
 - HAProxy health checks: https://www.haproxy.com/documentation/haproxy-configuration-tutorials/reliability/health-checks/
+- RabbitMQ Dead Lettering: https://www.rabbitmq.com/docs/dlx
+- RabbitMQ Consumer Prefetch: https://www.rabbitmq.com/docs/consumer-prefetch

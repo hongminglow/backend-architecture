@@ -29,7 +29,7 @@ export function setup() {
   const email = `load-${Date.now()}@example.com`;
   const password = "correct-horse-battery-staple";
   const register = http.post(`${BASE_URL}/v1/auth/register`, JSON.stringify({ email, password }), {
-    headers: { "Content-Type": "application/json", "X-Forwarded-For": "10.10.0.1" },
+    headers: { "Content-Type": "application/json", "X-Load-Test-Client-Id": "mixed-setup" },
   });
   check(register, { "registered load user": (r) => r.status === 201 });
   const body = register.json();
@@ -47,7 +47,7 @@ export function setup() {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${accessToken}`,
-          "X-Forwarded-For": "10.10.0.1",
+          "X-Load-Test-Client-Id": "mixed-setup",
         },
       },
     );
@@ -60,11 +60,11 @@ export function setup() {
 }
 
 export default function (data) {
-  const identity = `10.10.${__VU}.${__ITER % 250}`;
+  const identity = `mixed-${__VU}-${__ITER}`;
   if (Math.random() < 0.7 && data.orderIds.length > 0) {
     const orderId = data.orderIds[Math.floor(Math.random() * data.orderIds.length)];
     const response = http.get(`${BASE_URL}/v1/orders/${orderId}`, {
-      headers: { "X-Forwarded-For": identity },
+      headers: { "X-Load-Test-Client-Id": identity },
     });
     check(response, { "get order ok": (r) => r.status === 200 });
     return;
@@ -80,7 +80,7 @@ export default function (data) {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${data.accessToken}`,
-        "X-Forwarded-For": identity,
+        "X-Load-Test-Client-Id": identity,
       },
     },
   );

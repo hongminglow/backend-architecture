@@ -88,8 +88,17 @@ while (Date.now() < deadline) {
   const output = runDocker([...compose, "ps", "--format", "json"], { capture: true });
   const failures = allRequiredHealthy(parsePsJson(output));
   if (failures.length === 0) {
+    const postgresPort = runDocker([...compose, "port", "postgres", "5432"], {
+      capture: true,
+    }).trim();
+    const pgbouncerPort = runDocker([...compose, "port", "pgbouncer", "6432"], {
+      capture: true,
+    }).trim();
+
     console.log("Stack is ready.");
     console.log("API: http://localhost:8080");
+    console.log(`Postgres: ${postgresPort}`);
+    console.log(`PgBouncer: ${pgbouncerPort}`);
     console.log("Grafana: http://localhost:3001 (admin/admin)");
     console.log("Prometheus: http://localhost:9090");
     console.log(

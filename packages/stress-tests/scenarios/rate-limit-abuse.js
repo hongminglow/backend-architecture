@@ -17,7 +17,7 @@ export const options = {
 
 export default function () {
   const response = http.get(`${BASE_URL}/v1/orders?page=1&pageSize=1`, {
-    headers: { "X-Forwarded-For": "10.30.0.1" },
+    headers: { "X-Load-Test-Client-Id": "rate-limit-abuse" },
   });
 
   if (__ITER < LIMIT) {

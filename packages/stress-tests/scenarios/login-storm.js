@@ -29,7 +29,7 @@ export function setup() {
   const email = `login-${Date.now()}@example.com`;
   const password = "correct-horse-battery-staple";
   const response = http.post(`${BASE_URL}/v1/auth/register`, JSON.stringify({ email, password }), {
-    headers: { "Content-Type": "application/json", "X-Forwarded-For": "10.20.0.1" },
+    headers: { "Content-Type": "application/json", "X-Load-Test-Client-Id": "login-setup" },
   });
   check(response, { "registered login user": (r) => r.status === 201 });
   return { email, password };
@@ -37,7 +37,7 @@ export function setup() {
 
 export default function (data) {
   const valid = Math.random() < 0.8;
-  const identity = `10.20.${__VU}.${__ITER % 250}`;
+  const identity = `login-${__VU}-${__ITER}`;
   const response = http.post(
     `${BASE_URL}/v1/auth/login`,
     JSON.stringify({
@@ -48,7 +48,7 @@ export default function (data) {
       tags: { kind: valid ? "valid" : "invalid" },
       headers: {
         "Content-Type": "application/json",
-        "X-Forwarded-For": identity,
+        "X-Load-Test-Client-Id": identity,
       },
     },
   );

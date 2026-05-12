@@ -43,6 +43,7 @@ let connection: ChannelModel | null = null;
 let channel: ConfirmChannel | null = null;
 let shuttingDown = false;
 let pollTimer: NodeJS.Timeout | null = null;
+let currentPoll: Promise<void> | null = null;
 
 const register = new Registry();
 collectDefaultMetrics({ register, prefix: "outbox_publisher_" });
@@ -114,6 +115,10 @@ async function publish(row: OutboxRow): Promise<void> {
     messageId: row.payload.eventId,
     timestamp: Math.floor(Date.now() / 1000),
     type: row.event_type,
+    headers: {
+      "x-correlation-id": row.payload.correlationId ?? row.payload.eventId,
+      "x-event-type": row.event_type,
+    },
   });
   await activeChannel.waitForConfirms();
 
@@ -206,7 +211,10 @@ function schedulePoll(): void {
   }
 
   pollTimer = setTimeout(() => {
-    void pollOnce().finally(schedulePoll);
+    currentPoll = pollOnce().finally(() => {
+      currentPoll = null;
+      schedulePoll();
+    });
   }, config.pollIntervalMs);
 }
 
@@ -239,23 +247,37 @@ app.get("/metrics", async (_request, reply) => {
   return register.metrics();
 });
 
-async function shutdown(): Promise<void> {
+async function shutdown(signal: string): Promise<void> {
   shuttingDown = true;
+  logger.info({ signal }, "Graceful shutdown initiated — stopping poll loop");
+
   if (pollTimer) {
     clearTimeout(pollTimer);
   }
+
+  if (currentPoll) {
+    logger.info("Waiting for active outbox poll to finish");
+    await currentPoll.catch((error) => {
+      logger.warn(
+        { err: error instanceof Error ? error.message : String(error) },
+        "Active outbox poll ended with an error during shutdown",
+      );
+    });
+  }
+
   await app.close();
   await channel?.close().catch(() => undefined);
   await connection?.close().catch(() => undefined);
   await pool.end();
+  logger.info("Outbox publisher shutdown complete");
 }
 
 process.on("SIGTERM", () => {
-  void shutdown().then(() => process.exit(0));
+  void shutdown("SIGTERM").then(() => process.exit(0));
 });
 
 process.on("SIGINT", () => {
-  void shutdown().then(() => process.exit(0));
+  void shutdown("SIGINT").then(() => process.exit(0));
 });
 
 await app.listen({ host: "0.0.0.0", port: config.port });

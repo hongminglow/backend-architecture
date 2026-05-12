@@ -77,6 +77,8 @@ Local URLs:
 
 - API through HAProxy: `http://localhost:8080`
 - HAProxy stats: `http://localhost:8404/stats`
+- Postgres on loopback: `127.0.0.1:15432`
+- PgBouncer on loopback: `127.0.0.1:16432`
 - RabbitMQ management: `http://localhost:15672` (`playground` / `CHANGE_ME_RABBITMQ_PASSWORD`)
 - Prometheus: `http://localhost:9090`
 - Grafana: `http://localhost:3001` (`admin` / `admin`)
@@ -94,6 +96,7 @@ Postgres runs inside Docker Compose as the `postgres` service.
 - Container name: `infra-postgres-1`
 - Internal Docker host: `postgres`
 - Internal Docker port: `5432`
+- Localhost port: `127.0.0.1:15432`
 - Database: `backend_playground`
 - User: `playground`
 - Password: `CHANGE_ME_POSTGRES_PASSWORD`
@@ -104,10 +107,11 @@ PgBouncer runs inside Docker Compose as the `pgbouncer` service.
 - Container name: `infra-pgbouncer-1`
 - Internal Docker host: `pgbouncer`
 - Internal Docker port: `6432`
+- Localhost port: `127.0.0.1:16432`
 - Pool mode: `transaction`
 - Used by: `api-service` replicas
 
-Postgres and PgBouncer are **not exposed on `localhost` by default**. That is intentional. API replicas connect to PgBouncer inside the Docker network using:
+API replicas connect to PgBouncer inside the Docker network using:
 
 ```text
 postgres://playground:CHANGE_ME_POSTGRES_PASSWORD@pgbouncer:6432/backend_playground
@@ -150,29 +154,15 @@ docker compose -f infra/docker-compose.yml exec -T -e PGPASSWORD=CHANGE_ME_POSTG
   -c "show pools;"
 ```
 
-If you want to connect from a GUI client such as DBeaver, DataGrip, or TablePlus, add a temporary port mapping to the `postgres` service in `infra/docker-compose.yml`:
+If you want to connect from a GUI client such as DBeaver, DataGrip, or TablePlus, connect to:
 
-```yaml
-ports:
-  - "5432:5432"
-```
-
-Then connect to:
-
-- Host: `localhost`
-- Port: `5432`
+- Host: `127.0.0.1`
+- Port: `15432`
 - Database: `backend_playground`
 - User: `playground`
 - Password: `CHANGE_ME_POSTGRES_PASSWORD`
 
-To connect through PgBouncer from a GUI client instead, add this temporary port mapping to the `pgbouncer` service:
-
-```yaml
-ports:
-  - "6432:6432"
-```
-
-Then connect to `localhost:6432` with the same database, user, and password.
+To connect through PgBouncer from a GUI client instead, use `127.0.0.1:16432` with the same database, user, and password.
 
 ## Seeding Test Data
 
@@ -378,7 +368,7 @@ The default rate limit is 100 requests per 60 seconds per client identity.
 ```powershell
 $statuses = 1..110 | ForEach-Object {
   try {
-    (Invoke-WebRequest "$base/v1/orders?page=1&pageSize=1" -Headers @{ "X-Forwarded-For" = "10.30.0.1" }).StatusCode
+    (Invoke-WebRequest "$base/v1/orders?page=1&pageSize=1" -Headers @{ "X-Load-Test-Client-Id" = "rate-limit-manual" }).StatusCode
   } catch {
     $_.Exception.Response.StatusCode.value__
   }
@@ -445,6 +435,115 @@ The first MVP scripts are intentionally small. Use them to validate behavior bef
 - Grafana should show API request rate, p95 latency, outbox backlog, and worker processing.
 
 The target numbers in the requirements are ambitious for a local laptop. Treat them as the acceptance goal after profiling, not as guaranteed values from the initial scaffold.
+
+## Database Migrations
+
+The schema is initialized by `infra/postgres/init/001_schema.sql` on first container creation. After that, schema changes are applied through versioned migration files.
+
+Migration files live in `infra/postgres/migrations/` and follow the naming convention `NNN_description.sql`. See the [migrations README](infra/postgres/migrations/README.md) for rules.
+
+Run pending migrations:
+
+```powershell
+pnpm run migrate
+```
+
+The runner connects directly to Postgres on `127.0.0.1:15432` by default, not through PgBouncer. It fails if an already-applied migration file is edited and its checksum changes.
+
+With a custom database URL:
+
+```powershell
+node scripts/migrate.mjs --database-url postgres://playground:CHANGE_ME_POSTGRES_PASSWORD@localhost:15432/backend_playground
+```
+
+Check applied migrations:
+
+```powershell
+docker compose -f infra/docker-compose.yml exec -T postgres `
+  psql -U playground -d backend_playground `
+  -c "select version, description, applied_at from schema_migrations order by version;"
+```
+
+## Integration Tests
+
+Integration tests run against a live Docker Compose stack and verify cross-service behavior that load tests and type checks cannot catch.
+
+Prerequisites:
+
+- The stack must be running: `pnpm run stack:up -- --replicas 1`
+- Postgres must be reachable on `127.0.0.1:15432`, which is the default local Compose mapping.
+- RabbitMQ management must be reachable on `http://localhost:15672` for the DLQ test.
+
+Run all integration tests:
+
+```powershell
+pnpm run test:integration
+```
+
+Test suites:
+
+- **Order Lifecycle** — register → create order → verify outbox → verify worker processing → verify GET.
+- **Cache Invalidation** — GET MISS → GET HIT → PATCH → GET MISS (invalidated) → GET HIT (re-cached).
+- **Rate Limiting** — verify rate-limit headers → exceed limit → verify 429 with Retry-After.
+- **Correlation IDs** — verify echo of provided X-Correlation-Id → verify auto-generation when absent.
+- **Dead Letter Queue** — publish a terminal malformed `order.created` message → verify DLQ count increases.
+
+## Correlation IDs
+
+Every API response includes `X-Correlation-Id` and `X-Request-Id` headers. The correlation ID flows across service boundaries:
+
+1. **Client → API:** The API reads `X-Correlation-Id` from the incoming request. If not provided, it generates one from the request ID.
+2. **API → Outbox → RabbitMQ:** The API stores the correlation ID in the outbox payload, and the outbox publisher attaches it as the `x-correlation-id` AMQP message header.
+3. **RabbitMQ → Worker:** The worker reads the correlation ID from the message header and includes it in all processing logs.
+
+To trace an order across all services:
+
+```powershell
+# Get the correlation ID from the create-order response header
+$response = Invoke-WebRequest -Method Post -Uri "$base/v1/orders" `
+  -Headers @{ Authorization = "Bearer $accessToken"; "Content-Type" = "application/json" } `
+  -Body $orderBody
+$correlationId = $response.Headers["X-Correlation-Id"]
+
+# Search all service logs for this ID
+docker compose -f infra/docker-compose.yml logs | Select-String $correlationId
+```
+
+## Graceful Shutdown
+
+All three services handle `SIGTERM` and `SIGINT` with structured shutdown:
+
+- **api-service:** Rejects new requests with HTTP 503, drains in-flight requests up to `SHUTDOWN_DRAIN_MS` (default 30 s), then closes connections.
+- **worker-service:** Cancels the RabbitMQ consumer, waits for in-flight messages to complete (up to 30 s), then closes channels and connections. Unacknowledged messages are requeued by RabbitMQ.
+- **outbox-publisher:** Stops scheduling new poll cycles and lets the current cycle finish.
+
+Shutdown progress is logged at 250 ms intervals during drain.
+
+## Dead Letter Queue
+
+Failed messages follow a three-tier lifecycle:
+
+1. **Primary queue** (`order.created`) — normal processing with idempotency.
+2. **Retry queue** (`order.created.retry`) — failed messages wait here for `WORKER_RETRY_DELAY_MS` (default 5 s), then re-enter the primary queue.
+3. **Dead letter queue** (`order.created.dlq`) — messages that fail `WORKER_MAX_RETRIES` times (default 3) land here with error context in headers.
+
+Inspect the DLQ in the RabbitMQ management UI at `http://localhost:15672` → Queues → `order.created.dlq`.
+
+Check DLQ message count via the API:
+
+```powershell
+Invoke-RestMethod "http://localhost:15672/api/queues/%2F/order.created.dlq" `
+  -Headers @{ Authorization = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("playground:CHANGE_ME_RABBITMQ_PASSWORD")) }
+```
+
+## Backpressure Tuning
+
+The worker's RabbitMQ prefetch count controls how many unacknowledged messages it holds at once. Adjust via `WORKER_PREFETCH` (default 20):
+
+- **Low prefetch (5–10):** Better for slow processing or multiple worker replicas. Distributes work more evenly.
+- **High prefetch (50–100):** Better for fast processing with a single worker. Reduces idle time between fetches.
+
+The configured value is logged at startup and the `worker_service_in_flight_messages` Prometheus gauge shows the current count.
 
 ## Troubleshooting
 
