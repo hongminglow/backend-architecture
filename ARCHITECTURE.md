@@ -18,6 +18,12 @@ Backend Architecture Playground is a local-first backend lab for scaling and res
 
 ## Runtime Flow
 
+Visual architecture map:
+
+![Backend Architecture Playground visual architecture map](docs/assets/architecture-visual.svg)
+
+Detailed topology:
+
 ![Backend Architecture Playground request flow](docs/assets/architecture-flow.svg)
 
 Synchronous request path:

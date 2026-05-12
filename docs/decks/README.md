@@ -4,6 +4,6 @@ This folder stores presentation deliverables that explain the backend architectu
 
 Expected deck:
 
-- `backend-architecture-decisions.pptx`: editable PowerPoint covering the architecture decisions, alternatives, pros, cons, and verification approach.
+- `backend-architecture-decisions.pptx`: editable PowerPoint covering the architecture decisions, alternatives, pros, cons, and verification approach with a visual-first diagram style.
 
-Regenerate the deck when the ADR list or major architecture changes.
+Regenerate the deck when the ADR list, major architecture behavior, or architecture diagrams change.

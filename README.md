@@ -2,7 +2,13 @@
 
 Backend Architecture Playground is a local-first Node.js backend lab for testing enterprise backend patterns under measurable load. The MVP uses a compact order-processing workload so the system can exercise auth, writes, reads, caching, queues, workers, graceful shutdown, migrations, and observability without turning into a product build.
 
-## Architecture Flow
+## Architecture Maps
+
+Start with the visual map when explaining the system quickly:
+
+![Backend Architecture Playground visual architecture map](docs/assets/architecture-visual.svg)
+
+Use the detailed topology when checking exact services, tables, ports, and operational paths:
 
 ![Backend Architecture Playground request flow](docs/assets/architecture-flow.svg)
 

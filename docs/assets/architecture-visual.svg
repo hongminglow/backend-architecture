@@ -1,0 +1,292 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1050" viewBox="0 0 1800 1050" role="img" aria-labelledby="title desc">
+  <title id="title">Backend Architecture Playground visual architecture map</title>
+  <desc id="desc">A visual architecture map with compact service badges and short flow labels for client traffic, HAProxy, API replicas, Redis, PgBouncer, Postgres, outbox, RabbitMQ, worker, retries, DLQ, and observability.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#07111f"/>
+      <stop offset="55%" stop-color="#0e1729"/>
+      <stop offset="100%" stop-color="#0f1f2d"/>
+    </linearGradient>
+    <pattern id="grid" width="42" height="42" patternUnits="userSpaceOnUse">
+      <path d="M42 0H0V42" fill="none" stroke="#203044" stroke-width="1" opacity=".36"/>
+    </pattern>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="148%">
+      <feDropShadow dx="0" dy="18" stdDeviation="14" flood-color="#000000" flood-opacity=".28"/>
+    </filter>
+    <marker id="arrow-blue" markerWidth="15" markerHeight="15" refX="12" refY="7.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L13,7.5 L2,13 Z" fill="#38bdf8"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="15" markerHeight="15" refX="12" refY="7.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L13,7.5 L2,13 Z" fill="#22c55e"/>
+    </marker>
+    <marker id="arrow-amber" markerWidth="15" markerHeight="15" refX="12" refY="7.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L13,7.5 L2,13 Z" fill="#f59e0b"/>
+    </marker>
+    <marker id="arrow-red" markerWidth="15" markerHeight="15" refX="12" refY="7.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L13,7.5 L2,13 Z" fill="#ef4444"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="15" markerHeight="15" refX="12" refY="7.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L13,7.5 L2,13 Z" fill="#a78bfa"/>
+    </marker>
+    <symbol id="i-client" viewBox="0 0 48 48">
+      <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="7" y="10" width="34" height="24" rx="4"/>
+        <path d="M18 40h12M24 34v6"/>
+      </g>
+    </symbol>
+    <symbol id="i-shield" viewBox="0 0 48 48">
+      <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M24 6l16 6v10c0 10-6 16-16 20C14 38 8 32 8 22V12l16-6z"/>
+        <path d="M17 24l5 5 10-12"/>
+      </g>
+    </symbol>
+    <symbol id="i-api" viewBox="0 0 48 48">
+      <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="10" y="8" width="28" height="11" rx="4"/>
+        <rect x="10" y="29" width="28" height="11" rx="4"/>
+        <path d="M18 13.5h.1M18 34.5h.1M24 19v10"/>
+      </g>
+    </symbol>
+    <symbol id="i-cache" viewBox="0 0 48 48">
+      <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 14l12-7 12 7-12 7-12-7z"/>
+        <path d="M12 24l12 7 12-7M12 34l12 7 12-7"/>
+      </g>
+    </symbol>
+    <symbol id="i-pool" viewBox="0 0 48 48">
+      <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="14" cy="16" r="5"/>
+        <circle cx="34" cy="16" r="5"/>
+        <circle cx="24" cy="34" r="5"/>
+        <path d="M18 20l4 9M30 20l-4 9M19 16h10"/>
+      </g>
+    </symbol>
+    <symbol id="i-db" viewBox="0 0 48 48">
+      <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <ellipse cx="24" cy="11" rx="15" ry="6"/>
+        <path d="M9 11v25c0 4 7 7 15 7s15-3 15-7V11"/>
+        <path d="M9 23c0 4 7 7 15 7s15-3 15-7"/>
+        <path d="M9 35c0 4 7 7 15 7s15-3 15-7"/>
+      </g>
+    </symbol>
+    <symbol id="i-outbox" viewBox="0 0 48 48">
+      <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10 15h28l4 20H6l4-20z"/>
+        <path d="M17 27h6l3 5h10M24 8v18M18 14l6-6 6 6"/>
+      </g>
+    </symbol>
+    <symbol id="i-queue" viewBox="0 0 48 48">
+      <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="9" width="30" height="8" rx="3"/>
+        <rect x="9" y="21" width="30" height="8" rx="3"/>
+        <rect x="9" y="33" width="30" height="8" rx="3"/>
+      </g>
+    </symbol>
+    <symbol id="i-worker" viewBox="0 0 48 48">
+      <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="24" cy="24" r="6"/>
+        <path d="M24 7v7M24 34v7M7 24h7M34 24h7M12 12l5 5M31 31l5 5M36 12l-5 5M17 31l-5 5"/>
+      </g>
+    </symbol>
+    <symbol id="i-chart" viewBox="0 0 48 48">
+      <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 38h30"/>
+        <path d="M15 33V20M24 33V10M33 33V25"/>
+      </g>
+    </symbol>
+    <style>
+      .title { font-family: Inter, Segoe UI, Arial, sans-serif; font-size: 44px; font-weight: 860; fill: #f8fafc; }
+      .sub { font-family: Inter, Segoe UI, Arial, sans-serif; font-size: 17px; fill: #94a3b8; }
+      .zone { fill: rgba(15, 23, 42, .64); stroke: #2a3b54; stroke-width: 1.5; filter: url(#shadow); }
+      .zone-title { font-family: Inter, Segoe UI, Arial, sans-serif; font-size: 12px; letter-spacing: .16em; font-weight: 850; fill: #7dd3fc; }
+      .badge { fill: #111827; stroke: #31435f; stroke-width: 1.5; filter: url(#shadow); }
+      .badge-title { font-family: Inter, Segoe UI, Arial, sans-serif; font-size: 20px; font-weight: 850; fill: #f8fafc; }
+      .badge-sub { font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px; fill: #cbd5e1; }
+      .chip { fill: #0b1220; stroke: #334155; stroke-width: 1; }
+      .line-blue { stroke: #38bdf8; stroke-width: 4.5; fill: none; marker-end: url(#arrow-blue); }
+      .line-green { stroke: #22c55e; stroke-width: 4.5; fill: none; marker-end: url(#arrow-green); }
+      .line-amber { stroke: #f59e0b; stroke-width: 4.5; fill: none; marker-end: url(#arrow-amber); }
+      .line-red { stroke: #ef4444; stroke-width: 4.5; fill: none; marker-end: url(#arrow-red); }
+      .line-purple { stroke: #a78bfa; stroke-width: 3.4; fill: none; marker-end: url(#arrow-purple); stroke-dasharray: 10 10; }
+      .flow-label { font-family: Consolas, "Cascadia Mono", monospace; font-size: 13px; font-weight: 850; fill: #e2e8f0; }
+      .legend { font-family: Inter, Segoe UI, Arial, sans-serif; font-size: 13px; fill: #cbd5e1; }
+      .port { font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px; fill: #94a3b8; }
+      .blue { color: #38bdf8; }
+      .green { color: #22c55e; }
+      .red { color: #ef4444; }
+      .amber { color: #f59e0b; }
+      .purple { color: #a78bfa; }
+      .slate { color: #cbd5e1; }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1050" fill="url(#bg)"/>
+  <rect width="1800" height="1050" fill="url(#grid)"/>
+
+  <text x="72" y="78" class="title">Backend Architecture Playground</text>
+  <text x="74" y="114" class="sub">Visual request map: short labels, service badges, and developer-readable flow paths.</text>
+
+  <rect x="72" y="164" width="260" height="708" rx="32" class="zone"/>
+  <text x="102" y="202" class="zone-title">CALLERS</text>
+
+  <rect x="394" y="164" width="272" height="708" rx="32" class="zone"/>
+  <text x="424" y="202" class="zone-title">EDGE</text>
+
+  <rect x="728" y="164" width="322" height="708" rx="32" class="zone"/>
+  <text x="758" y="202" class="zone-title">APP</text>
+
+  <rect x="1112" y="164" width="330" height="708" rx="32" class="zone"/>
+  <text x="1142" y="202" class="zone-title">STATE</text>
+
+  <rect x="1504" y="164" width="224" height="708" rx="32" class="zone"/>
+  <text x="1534" y="202" class="zone-title">OBSERVE</text>
+
+  <g transform="translate(112 282)">
+    <rect width="180" height="124" rx="26" class="badge"/>
+    <circle cx="54" cy="46" r="30" fill="#0f2745"/>
+    <use href="#i-client" x="30" y="22" width="48" height="48" class="blue"/>
+    <text x="102" y="48" class="badge-title">Client</text>
+    <text x="102" y="76" class="badge-sub">curl / app</text>
+  </g>
+
+  <g transform="translate(112 474)">
+    <rect width="180" height="124" rx="26" class="badge"/>
+    <circle cx="54" cy="46" r="30" fill="#2a1747"/>
+    <use href="#i-chart" x="30" y="22" width="48" height="48" class="purple"/>
+    <text x="102" y="48" class="badge-title">k6</text>
+    <text x="102" y="76" class="badge-sub">load</text>
+  </g>
+
+  <g transform="translate(112 666)">
+    <rect width="180" height="124" rx="26" class="badge"/>
+    <circle cx="54" cy="46" r="30" fill="#422006"/>
+    <use href="#i-outbox" x="30" y="22" width="48" height="48" class="amber"/>
+    <text x="102" y="48" class="badge-title">Seed</text>
+    <text x="102" y="76" class="badge-sub">orders</text>
+  </g>
+
+  <g transform="translate(440 308)">
+    <rect width="180" height="152" rx="28" class="badge"/>
+    <circle cx="90" cy="52" r="36" fill="#0f2745"/>
+    <use href="#i-shield" x="58" y="20" width="64" height="64" class="blue"/>
+    <text x="90" y="112" class="badge-title" text-anchor="middle">HAProxy</text>
+    <text x="90" y="136" class="badge-sub" text-anchor="middle">8080 / 8404</text>
+  </g>
+
+  <g transform="translate(440 568)">
+    <rect width="180" height="124" rx="26" class="badge"/>
+    <circle cx="54" cy="46" r="30" fill="#422006"/>
+    <use href="#i-shield" x="30" y="22" width="48" height="48" class="amber"/>
+    <text x="102" y="48" class="badge-title">Limits</text>
+    <text x="102" y="76" class="badge-sub">cap / IP</text>
+  </g>
+
+  <g transform="translate(782 286)">
+    <rect width="220" height="174" rx="30" class="badge"/>
+    <circle cx="110" cy="58" r="40" fill="#2a1747"/>
+    <use href="#i-api" x="74" y="22" width="72" height="72" class="purple"/>
+    <text x="110" y="126" class="badge-title" text-anchor="middle">API replicas</text>
+    <text x="110" y="151" class="badge-sub" text-anchor="middle">1x / 4x</text>
+  </g>
+
+  <g transform="translate(784 594)">
+    <rect width="216" height="124" rx="26" class="badge"/>
+    <circle cx="54" cy="46" r="30" fill="#422006"/>
+    <use href="#i-outbox" x="30" y="22" width="48" height="48" class="amber"/>
+    <text x="102" y="48" class="badge-title">Outbox</text>
+    <text x="102" y="76" class="badge-sub">commit first</text>
+  </g>
+
+  <g transform="translate(1138 244)">
+    <rect width="244" height="124" rx="26" fill="#1d120f" stroke="#ef4444" stroke-width="1.6" filter="url(#shadow)"/>
+    <circle cx="58" cy="46" r="31" fill="#3f1214"/>
+    <use href="#i-cache" x="34" y="22" width="48" height="48" class="red"/>
+    <text x="108" y="48" class="badge-title">Redis</text>
+    <text x="108" y="76" class="badge-sub">cache / rate</text>
+  </g>
+
+  <g transform="translate(1138 444)">
+    <rect width="244" height="124" rx="26" fill="#101f36" stroke="#38bdf8" stroke-width="1.6" filter="url(#shadow)"/>
+    <circle cx="58" cy="46" r="31" fill="#0f2745"/>
+    <use href="#i-pool" x="34" y="22" width="48" height="48" class="blue"/>
+    <text x="108" y="48" class="badge-title">PgBouncer</text>
+    <text x="108" y="76" class="badge-sub">16432</text>
+  </g>
+
+  <g transform="translate(1138 644)">
+    <rect width="244" height="152" rx="30" fill="#101f36" stroke="#38bdf8" stroke-width="1.6" filter="url(#shadow)"/>
+    <circle cx="122" cy="54" r="38" fill="#0f2745"/>
+    <use href="#i-db" x="88" y="20" width="68" height="68" class="blue"/>
+    <text x="122" y="118" class="badge-title" text-anchor="middle">Postgres</text>
+    <text x="122" y="142" class="badge-sub" text-anchor="middle">15432</text>
+  </g>
+
+  <g transform="translate(784 808)">
+    <rect width="216" height="124" rx="26" fill="#251604" stroke="#f59e0b" stroke-width="1.6" filter="url(#shadow)"/>
+    <circle cx="54" cy="46" r="30" fill="#422006"/>
+    <use href="#i-queue" x="30" y="22" width="48" height="48" class="amber"/>
+    <text x="102" y="48" class="badge-title">RabbitMQ</text>
+    <text x="102" y="76" class="badge-sub">15672</text>
+  </g>
+
+  <g transform="translate(1138 842)">
+    <rect width="244" height="88" rx="24" fill="#2d1111" stroke="#ef4444" stroke-width="1.6" filter="url(#shadow)"/>
+    <use href="#i-queue" x="30" y="22" width="44" height="44" class="red"/>
+    <text x="94" y="38" class="badge-title">Retry</text>
+    <text x="94" y="64" class="badge-sub">DLQ</text>
+  </g>
+
+  <g transform="translate(1478 724)">
+    <rect width="190" height="136" rx="28" fill="#23163f" stroke="#a78bfa" stroke-width="1.6" filter="url(#shadow)"/>
+    <circle cx="95" cy="52" r="36" fill="#2a1747"/>
+    <use href="#i-worker" x="63" y="20" width="64" height="64" class="purple"/>
+    <text x="95" y="110" class="badge-title" text-anchor="middle">Worker</text>
+  </g>
+
+  <g transform="translate(1524 300)">
+    <rect width="158" height="110" rx="24" class="badge"/>
+    <use href="#i-chart" x="55" y="18" width="48" height="48" class="green"/>
+    <text x="79" y="86" class="badge-sub" text-anchor="middle">Prometheus</text>
+  </g>
+
+  <g transform="translate(1524 468)">
+    <rect width="158" height="110" rx="24" class="badge"/>
+    <use href="#i-chart" x="55" y="18" width="48" height="48" class="amber"/>
+    <text x="79" y="86" class="badge-sub" text-anchor="middle">Grafana</text>
+  </g>
+
+  <path d="M292 344H440" class="line-blue"/>
+  <text x="342" y="328" class="flow-label">HTTP</text>
+  <path d="M620 384H782" class="line-blue"/>
+  <text x="672" y="368" class="flow-label">healthy</text>
+  <path d="M1002 344H1138" class="line-green"/>
+  <text x="1042" y="326" class="flow-label">HIT</text>
+  <path d="M1138 306C1062 270 1016 286 1002 332" class="line-green"/>
+  <text x="1040" y="276" class="flow-label">return</text>
+  <path d="M1002 388C1058 420 1086 486 1138 506" class="line-amber"/>
+  <text x="1046" y="452" class="flow-label">MISS</text>
+  <path d="M1382 506V644" class="line-blue"/>
+  <text x="1398" y="582" class="flow-label">SQL</text>
+  <path d="M892 460V594" class="line-amber"/>
+  <text x="912" y="536" class="flow-label">COMMIT</text>
+  <path d="M1000 656C1060 658 1088 698 1138 712" class="line-amber"/>
+  <text x="1030" y="690" class="flow-label">outbox row</text>
+  <path d="M892 718V808" class="line-amber"/>
+  <text x="912" y="772" class="flow-label">EVENT</text>
+  <path d="M1000 870H1478" class="line-amber"/>
+  <text x="1176" y="852" class="flow-label">order.created</text>
+  <path d="M1478 816H1382" class="line-red"/>
+  <text x="1406" y="798" class="flow-label">RETRY</text>
+  <path d="M1382 886H1478" class="line-red"/>
+  <text x="1415" y="916" class="flow-label">DLQ</text>
+  <path d="M1573 724C1530 638 1440 742 1382 720" class="line-green"/>
+  <text x="1436" y="684" class="flow-label">processed</text>
+  <path d="M1504 352C1388 314 1210 364 1002 372" class="line-purple"/>
+  <path d="M1504 352C1430 518 1296 638 1002 870" class="line-purple"/>
+  <path d="M1504 520H1382" class="line-purple"/>
+  <text x="1420" y="506" class="flow-label">metrics</text>
+
+  <rect x="72" y="930" width="1656" height="58" rx="22" fill="rgba(15,23,42,.82)" stroke="#2a3b54"/>
+  <text x="104" y="966" class="legend">Legend: blue sync path | green cache/success | amber durable async | red retry/DLQ | purple observability</text>
+  <text x="1218" y="966" class="port">API 8080 | Postgres 15432 | PgBouncer 16432 | RabbitMQ 15672 | Grafana 3001</text>
+</svg>
