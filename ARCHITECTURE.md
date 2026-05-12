@@ -1,174 +1,73 @@
 # Architecture
 
-This document is the commit-facing architecture note for Backend Architecture Playground. The `.kiro` spec folder is ignored, so decisions that matter to contributors should be captured here as well.
+This is the short commit-facing architecture entry point. Detailed architecture notes are split under `docs/architecture/` so operational guidance does not get mixed into one large file.
 
-## MVP Shape
+## Current MVP Shape
 
-Backend Architecture Playground is a local-first backend lab for scaling and resilience experiments. The MVP uses a compact order-processing workload to exercise:
+Backend Architecture Playground is a local-first backend lab for scaling and resilience experiments. The MVP uses an order-processing workload to exercise:
 
-- HTTP auth and order APIs through Fastify.
-- Horizontal API replicas behind HAProxy.
+- HAProxy edge routing with health checks and least-connections balancing.
+- Fastify API replicas for auth and order APIs.
+- Redis-backed distributed rate limiting and read-through cache.
 - PgBouncer transaction pooling between API replicas and Postgres.
-- Postgres as the transactional datastore.
-- Redis for read-through caching and distributed rate limiting.
-- Transactional outbox rows for reliable event publication.
-- RabbitMQ for asynchronous event delivery.
-- A worker service with idempotent `order.created` handling.
+- Postgres for transactional data, outbox events, migration records, and idempotency.
+- Transactional outbox plus RabbitMQ for durable async order events.
+- Worker service with idempotent handling, bounded retries, DLQ, and prefetch backpressure.
 - Prometheus and Grafana for local observability.
-- k6 scripts for load and behavior checks.
+- Integration tests and k6 scenarios for behavior and scaling checks.
 
 ## Runtime Flow
 
-1. A client sends traffic to HAProxy on `http://localhost:8080`.
-2. HAProxy uses least-connections balancing across healthy `api-service` replicas.
-3. `api-service` validates requests with zod, applies Redis-backed rate limits, and connects to Postgres through PgBouncer.
-4. PgBouncer reuses a smaller set of Postgres backend connections for API traffic.
-5. When an order is created, `api-service` writes the order and an `order.created` outbox row in the same Postgres transaction.
-6. `outbox-publisher` polls unpublished outbox rows, publishes them to RabbitMQ, and marks them published after broker confirmation.
-7. `worker-service` consumes RabbitMQ messages, records `eventId` in Postgres for idempotency, and simulates notification work.
-8. Prometheus scrapes service metrics and Grafana provisions local dashboards.
+![Backend Architecture Playground request flow](docs/assets/architecture-flow.svg)
 
-## Accepted Decisions
+Synchronous request path:
 
-### ADR-0001: Use an Order Platform Domain
+```text
+Client -> HAProxy -> api-service -> PgBouncer -> Postgres
+```
 
-- **Decision:** Use users, auth, orders, status updates, and `order.created` processing as the MVP workload.
-- **Why:** It is concrete enough to test realistic read/write/auth/cache/queue behavior without inventing a full product.
-- **Alternatives:** A generic benchmark API would be simpler but too artificial. A multi-tenant SaaS domain would test more authorization behavior but add unnecessary product complexity.
-- **Verification:** `mixed-orders`, `login-storm`, and `rate-limit-abuse` scenarios exercise the domain.
+Async order-created path:
 
-### ADR-0002: Keep the MVP Local-First
+```text
+api-service -> Postgres outbox -> outbox-publisher -> RabbitMQ -> worker-service -> Postgres
+```
 
-- **Decision:** Run the MVP through Docker Compose and local wrapper scripts. Defer AWS to a later phase.
-- **Why:** Local runs are cheaper, reproducible, easier to reset, and not tied to account quotas or billing.
-- **Alternatives:** AWS in MVP would expose managed services earlier but make the first milestone harder to reproduce.
-- **Verification:** `pnpm run stack:up -- --replicas 1` and `pnpm run stack:up -- --replicas 4` bring up the stack locally.
+Cache and rate-limit path:
 
-### ADR-0003: Use HAProxy as the Reverse Proxy
+```text
+api-service -> Redis
+```
 
-- **Decision:** Use HAProxy for local load balancing.
-- **Why:** The MVP needs least-connections routing, active health checks, fast unhealthy-replica removal, and connection limiting. HAProxy supports those directly.
-- **Alternatives:** Nginx is common, but stock open-source Nginx does not cleanly cover the active health-check behavior required here. Envoy is powerful but heavier for this MVP.
-- **Verification:** The stack starts with 1 or 4 API replicas, and HAProxy reports healthy backends.
+Observability path:
 
-### ADR-0004: Use RabbitMQ with a Transactional Outbox
+```text
+Prometheus -> API / outbox / worker metrics
+Grafana -> Prometheus
+```
 
-- **Decision:** `api-service` writes order data and an outbox event in one Postgres transaction. `outbox-publisher` publishes later and marks the row published after confirmation.
-- **Why:** Direct publish after DB commit can silently lose events if the broker publish fails. The outbox avoids distributed transactions while preserving durable intent.
-- **Alternatives:** Direct publish is simpler but unreliable after commit. Two-phase commit is too heavy for this playground. SQS is an AWS-phase decision because it changes broker semantics.
-- **Tradeoff:** Adds a service, table, retry loop, and metrics. Gains reliable, observable event publication.
-- **Verification:** Created orders produce outbox rows; unpublished count drains to zero; worker records processed `eventId` rows.
+## Detailed Docs
 
-### ADR-0005: Use Redis for Cache and Distributed Rate Limiting
+| Topic                           | Document                                                               |
+| ------------------------------- | ---------------------------------------------------------------------- |
+| Architecture decision records   | [docs/architecture/decisions.md](docs/architecture/decisions.md)       |
+| Request-flow explanation        | [docs/architecture/request-flow.md](docs/architecture/request-flow.md) |
+| Container/service map           | [STACK.md](STACK.md)                                                   |
+| Development workflow            | [docs/development.md](docs/development.md)                             |
+| Deployment workflow             | [docs/deployment.md](docs/deployment.md)                               |
+| Database and migration workflow | [docs/database.md](docs/database.md)                                   |
+| Testing workflow                | [docs/testing.md](docs/testing.md)                                     |
+| Operations workflow             | [docs/operations.md](docs/operations.md)                               |
+| Version update workflow         | [docs/versioning.md](docs/versioning.md)                               |
 
-- **Decision:** Use Redis for order cache entries and distributed rate-limit counters. Cache/rate-limit storage failures fail open.
-- **Why:** API replicas need a shared source of truth for cache and rate counters.
-- **Alternatives:** In-process cache is inconsistent across replicas. Postgres counters add unnecessary write load. Fail-closed Redis behavior would let cache infrastructure block normal traffic.
-- **Verification:** Repeated `GET /v1/orders/:id` returns cache `MISS` then `HIT`; rate-limit checks produce HTTP 429 after the configured limit.
+## Current Verification Baseline
 
-### ADR-0006: Separate Benchmark and Abuse-Control Scenarios
+Expected checks:
 
-- **Decision:** `mixed-orders` and `login-storm` are benchmark scenarios. `rate-limit-abuse` directly tests rate-limit behavior.
-- **Why:** If default rate limits trigger during benchmark runs, the benchmark measures protection settings instead of service scaling. HAProxy overwrites `X-Forwarded-For`, so deterministic test identities use the explicit `X-Load-Test-Client-Id` header when `ALLOW_LOAD_TEST_CLIENT_IDENTITY=true`.
-- **Alternatives:** Disabling rate limits everywhere loses coverage. Leaving defaults active everywhere creates misleading failures.
-- **Verification:** Benchmark scripts use deterministic virtual client identities; `rate-limit-abuse` validates HTTP 429 and headers.
+```powershell
+pnpm run typecheck
+pnpm run lint
+pnpm run test:integration
+docker compose -f infra/docker-compose.yml config
+```
 
-### ADR-0007: Use a Readiness-Aware Stack Wrapper
-
-- **Decision:** `pnpm run stack:up -- --replicas <1|4>` owns startup, scaling, and readiness checks.
-- **Why:** `docker compose up -d` starts containers but does not provide a full-stack readiness verdict.
-- **Alternatives:** Raw Compose is useful for debugging but weaker as a contributor entrypoint.
-- **Verification:** The wrapper rejects invalid replica counts, starts the stack, waits for health, and reports URLs.
-
-### ADR-0008: Defer AWS Deployment to Phase 3
-
-- **Decision:** AWS is not required for MVP. Later mapping: ALB, ECS/Fargate, ECR, RDS PostgreSQL, ElastiCache for Redis, Amazon MQ for RabbitMQ, CloudWatch, IAM/VPC/security groups, Secrets Manager or SSM Parameter Store.
-- **Why:** AWS is useful for enterprise coverage but introduces account setup, cost, quota, and teardown concerns.
-- **Alternatives:** EKS is useful but heavier. EC2 adds server management. SQS may be useful but changes RabbitMQ semantics.
-- **Verification:** A future AWS phase must include infrastructure-as-code, cost guardrails, teardown commands, and CloudWatch checks.
-
-### ADR-0009: Add PgBouncer for API Database Pooling
-
-- **Decision:** Put PgBouncer between `api-service` replicas and Postgres, using transaction pooling. Keep `outbox-publisher` and `worker-service` on direct Postgres connections for simpler background processing semantics.
-- **Why:** With horizontal replicas, each Node process has its own `pg` pool. Four API replicas with pool size 20 can already reserve up to 80 Postgres connections before background services are counted. PgBouncer lets the API accept many client-side database sessions while reusing a smaller backend connection pool.
-- **Alternatives:** Direct Postgres pools are simpler and fine for the first smoke test, but they hide an important scaling bottleneck. Putting all services behind PgBouncer is possible, but the outbox publisher has explicit transaction/locking behavior and benefits from direct visibility during early MVP work.
-- **Tradeoff:** Adds one infrastructure container and another config surface. In return, API replica scaling is closer to enterprise deployment practice.
-- **Verification:** `api-service` uses `pgbouncer:6432`; PgBouncer `show pools;` reports API pool activity; the stack still starts with 1 and 4 API replicas.
-
-### ADR-0010: Seed Through the Public API
-
-- **Decision:** Add `pnpm run seed:orders` to create large numbers of orders through the public API.
-- **Why:** Load data should exercise the same path users and tests use: HAProxy, auth, API validation, Postgres writes, outbox publication, RabbitMQ, and worker idempotency.
-- **Alternatives:** Direct SQL inserts would be faster, but they would bypass the outbox and worker path. A custom DB fixture loader may still be useful later for low-level database tests.
-- **Verification:** Seeding increases `orders`, drains unpublished outbox rows, and increases `processed_events`.
-
-### ADR-0011: Graceful Shutdown with In-Flight Request Drain
-
-- **Decision:** All three services implement structured graceful shutdown. The API rejects new requests with HTTP 503 during shutdown and drains in-flight requests up to a configurable timeout (`SHUTDOWN_DRAIN_MS`, default 30 s). The worker cancels its consumer and waits for in-flight messages to complete. The outbox publisher lets the current poll cycle finish.
-- **Why:** Scaling replicas from 1 to 4 and back requires deterministic behavior during container stops. Dropping in-flight work silently contradicts the playground's scaling and resilience claims.
-- **Alternatives:** Immediate `process.exit()` is simpler but drops work. Fixed sleep is unreliable under variable load.
-- **Verification:** `SIGTERM` during active load produces structured drain logs. Accepted requests complete successfully. Worker messages either finish or are requeued by RabbitMQ.
-
-### ADR-0012: Dead Letter Queue with Bounded Retry Strategy
-
-- **Decision:** The worker uses a three-tier message lifecycle: primary queue → retry queue (with TTL and dead-letter exchange back to primary) → dead letter queue. Failed messages are retried up to `WORKER_MAX_RETRIES` (default 3, configurable) with `x-retry-count` and `x-last-error` headers. A `worker_service_dead_lettered_total` Prometheus counter tracks DLQ volume.
-- **Why:** Without bounded retries, a poison message either blocks the consumer indefinitely or is silently lost. Both behaviors make the async pipeline unreliable.
-- **Alternatives:** RabbitMQ native DLX is automatic but provides less control over retry metadata. Discarding failures is simpler but loses data.
-- **Verification:** Malformed messages retry up to the configured limit, then appear in the DLQ with correct error context headers.
-
-### ADR-0013: Database Migration Strategy with Version Tracking
-
-- **Decision:** A `schema_migrations` table tracks applied migrations by version, description, and checksum. A runner script reads numbered SQL files from `infra/postgres/migrations/`, applies new ones in order within a transaction, and records them. The runner connects directly to Postgres (not PgBouncer) for DDL safety.
-- **Why:** The init script only runs on first container creation. Schema evolution after initial setup requires either volume destruction or manual SQL. Neither is acceptable for enterprise backend practices.
-- **Alternatives:** `node-pg-migrate` adds a dependency. Prisma couples to an ORM. Manual SQL is not auditable.
-- **Verification:** `pnpm run migrate` applies only new migrations and records them. Repeated runs are idempotent, and checksum drift in already-applied migration files fails the run.
-
-### ADR-0014: Distributed Correlation IDs Across Service Boundaries
-
-- **Decision:** The API reads or generates an `X-Correlation-Id` on each request, attaches it to the response and log context, and stores it in the outbox payload for created orders. The outbox publisher attaches that value as a RabbitMQ `x-correlation-id` message header. The worker reads it from the message and creates a child logger with the correlation ID. This enables end-to-end log search across all three services for a single business operation.
-- **Why:** A request flows through 7+ components. Without a shared identifier, correlating logs across services requires timestamp guesswork.
-- **Alternatives:** OpenTelemetry is richer but adds infrastructure. Fastify's `requestId` does not cross broker boundaries.
-- **Verification:** Created order outbox payloads contain the API response correlation ID, and searching all service logs for that ID returns entries from the API, outbox publisher, and worker.
-
-### ADR-0015: Integration Test Harness for Cross-Service Verification
-
-- **Decision:** Add `packages/integration-tests/` with test scripts that run against a live Docker Compose stack. Tests verify end-to-end paths: order lifecycle with outbox and worker, DLQ behavior, cache hit/miss/invalidation, and rate-limit enforcement.
-- **Why:** k6 tests validate throughput and TypeScript validates types, but neither catches cross-service integration regressions.
-- **Alternatives:** Unit tests with mocks are faster but cannot verify real integration. Contract tests verify shape but not data flow.
-- **Verification:** `pnpm run test:integration` passes against a healthy stack with 1 API replica.
-
-### ADR-0016: Configurable Worker Backpressure via Prefetch Tuning
-
-- **Decision:** The worker's RabbitMQ prefetch count is configurable via `WORKER_PREFETCH` (default 20). The value is logged at channel setup. This controls how many unacknowledged messages the worker holds, directly affecting throughput and memory pressure.
-- **Why:** Hardcoded prefetch prevents tuning for different processing speeds and worker counts.
-- **Alternatives:** Dynamic prefetch adjustment is sophisticated but unjustified for the MVP.
-- **Verification:** The `worker_service_in_flight_messages` gauge never exceeds the configured prefetch. Changing the value visibly affects throughput.
-
-## Current Local Verification
-
-The MVP has been verified locally with:
-
-- TypeScript typecheck for shared, API, outbox publisher, and worker packages.
-- ESLint for service code.
-- Docker Compose config validation.
-- Docker build and startup with 1 API replica.
-- Docker startup with 4 API replicas.
-- API smoke flow: readiness, register, create order, cache miss/hit, patch status, refresh token.
-- Outbox/worker flow: unpublished outbox count drains to zero and worker records `order.created` processing.
-- Rate-limit behavior: 100 successful requests followed by HTTP 429 responses.
-- Graceful shutdown: `SIGTERM` during active load produces structured drain logs and accepted requests complete.
-- Dead letter queue: malformed messages retry up to the configured limit and appear in the DLQ.
-- Correlation IDs: `X-Correlation-Id` appears in API responses, is stored in outbox payloads, and is propagated to worker logs through RabbitMQ headers.
-- Backpressure: `worker_service_in_flight_messages` gauge stays within the configured prefetch limit.
-
-## References
-
-- AWS Free Tier: https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/free-tier.html
-- Amazon ECS: https://aws.amazon.com/documentation-overview/ecs/
-- Elastic Load Balancing: https://aws.amazon.com/documentation-overview/elasticloadbalancing/
-- Amazon ElastiCache for Redis: https://aws.amazon.com/documentation-overview/redis/
-- Amazon MQ: https://aws.amazon.com/amazon-mq/features/
-- Amazon CloudWatch: https://aws.amazon.com/documentation-overview/cloudwatch/
-- HAProxy health checks: https://www.haproxy.com/documentation/haproxy-configuration-tutorials/reliability/health-checks/
-- RabbitMQ Dead Lettering: https://www.rabbitmq.com/docs/dlx
-- RabbitMQ Consumer Prefetch: https://www.rabbitmq.com/docs/consumer-prefetch
+The current live integration suite covers order lifecycle, cache invalidation, rate limiting, correlation IDs, and DLQ behavior.

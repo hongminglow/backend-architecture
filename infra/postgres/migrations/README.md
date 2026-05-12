@@ -27,6 +27,12 @@ Or with a custom database URL:
 node scripts/migrate.mjs --database-url postgres://user:pass@localhost:5432/dbname
 ```
 
+For the default local stack, use:
+
+```powershell
+node scripts/migrate.mjs --database-url postgres://playground:CHANGE_ME_POSTGRES_PASSWORD@localhost:15432/backend_playground
+```
+
 ## Rules
 
 - **Never modify an already-applied migration.** If you need to change something, write a new migration.
