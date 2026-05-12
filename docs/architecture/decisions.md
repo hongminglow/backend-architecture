@@ -4,24 +4,24 @@ This guide records the main backend architecture decisions, why they were made, 
 
 ## Decision Summary
 
-| ADR  | Decision                               | Phase | Verification                                                |
-| ---- | -------------------------------------- | ----- | ----------------------------------------------------------- | --- |
-| 0001 | Order Platform domain                  | MVP   | k6 scenarios and API walkthrough                            |
-| 0002 | Local-first MVP                        | MVP   | `pnpm run stack:up -- --replicas 1                          | 4`  |
-| 0003 | HAProxy reverse proxy                  | MVP   | health checks and HAProxy stats                             |
-| 0004 | RabbitMQ plus transactional outbox     | MVP   | outbox rows publish and worker records `processed_events`   |
-| 0005 | Redis cache and rate limiting          | MVP   | `X-Cache` and HTTP 429 checks                               |
-| 0006 | Separate benchmark and abuse scenarios | MVP   | deterministic `X-Load-Test-Client-Id` identities            |
-| 0007 | Readiness-aware stack wrapper          | MVP   | wrapper waits for healthy required services                 |
-| 0008 | AWS deferred to Phase 3                | Later | future IaC, cost guardrails, teardown                       |
-| 0009 | PgBouncer for API DB pooling           | MVP   | API uses `pgbouncer:6432`; `show pools;` reports activity   |
-| 0010 | Seed through the public API            | MVP   | orders, outbox, and processed event counts increase         |
-| 0011 | Graceful shutdown and drain            | MVP   | structured drain logs and completed accepted work           |
-| 0012 | Bounded retry and DLQ                  | MVP   | integration test verifies DLQ count increases               |
-| 0013 | Versioned DB migrations                | MVP   | `schema_migrations`, checksum checks, idempotent runs       |
-| 0014 | Distributed correlation IDs            | MVP   | outbox payload and RabbitMQ headers preserve correlation ID |
-| 0015 | Integration test harness               | MVP   | `pnpm run test:integration`                                 |
-| 0016 | Worker prefetch backpressure           | MVP   | in-flight gauge stays within configured prefetch            |
+| ADR  | Decision                               | Phase | Verification                                                       |
+| ---- | -------------------------------------- | ----- | ------------------------------------------------------------------ |
+| 0001 | Order Platform domain                  | MVP   | k6 scenarios and API walkthrough                                   |
+| 0002 | Local-first MVP                        | MVP   | `pnpm run stack:up -- --replicas 1` and `--replicas 4`             |
+| 0003 | HAProxy reverse proxy                  | MVP   | active health checks, least-connections routing, and HAProxy stats |
+| 0004 | RabbitMQ plus transactional outbox     | MVP   | outbox rows publish and worker records `processed_events`          |
+| 0005 | Redis cache and rate limiting          | MVP   | `X-Cache` and HTTP 429 checks                                      |
+| 0006 | Separate benchmark and abuse scenarios | MVP   | deterministic `X-Load-Test-Client-Id` identities                   |
+| 0007 | Readiness-aware stack wrapper          | MVP   | wrapper waits for healthy required services                        |
+| 0008 | AWS deferred to Phase 3                | Later | future IaC, cost guardrails, teardown                              |
+| 0009 | PgBouncer for API DB pooling           | MVP   | API uses `pgbouncer:6432`; `show pools;` reports activity          |
+| 0010 | Seed through the public API            | MVP   | orders, outbox, and processed event counts increase                |
+| 0011 | Graceful shutdown and drain            | MVP   | structured drain logs and completed accepted work                  |
+| 0012 | Bounded retry and DLQ                  | MVP   | integration test verifies DLQ count increases                      |
+| 0013 | Versioned DB migrations                | MVP   | `schema_migrations`, checksum checks, idempotent runs              |
+| 0014 | Distributed correlation IDs            | MVP   | outbox payload and RabbitMQ headers preserve correlation ID        |
+| 0015 | Integration test harness               | MVP   | `pnpm run test:integration`                                        |
+| 0016 | Worker prefetch backpressure           | MVP   | in-flight gauge stays within configured prefetch                   |
 
 ## ADR-0001: Order Platform Domain
 
@@ -41,7 +41,7 @@ This guide records the main backend architecture decisions, why they were made, 
 
 - **Decision:** Use HAProxy for edge routing in local Compose.
 - **Why:** HAProxy directly supports least-connections balancing, active health checks, connection limits, and forwarded IP normalization.
-- **Alternatives:** Nginx is common, but open-source active health-check behavior is weaker for this spec. Envoy is powerful but heavier.
+- **Alternatives:** Nginx is common and useful for many web-server/reverse-proxy cases, but stock open-source Nginx mainly gives passive upstream failure handling unless NGINX Plus or third-party modules are introduced. Envoy is powerful but heavier than this MVP needs.
 - **Tradeoff:** Adds HAProxy config, but makes scaling behavior explicit and measurable.
 
 ## ADR-0004: RabbitMQ with Transactional Outbox

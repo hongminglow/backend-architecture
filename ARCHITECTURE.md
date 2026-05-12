@@ -51,6 +51,16 @@ Prometheus -> API / outbox / worker metrics
 Grafana -> Prometheus
 ```
 
+## Edge Proxy Decision
+
+The MVP uses HAProxy instead of Nginx because this playground needs measurable local load-balancing behavior more than a general web-server surface.
+
+- HAProxy directly fits the current edge requirements: active HTTP health checks, least-connections balancing, connection caps, forwarded IP normalization, and a built-in stats page.
+- Stock open-source Nginx is common and capable, but its upstream health behavior is mostly passive unless using NGINX Plus or third-party modules. That would make the MVP requirement for active health checks less direct.
+- Envoy would also cover this space, but it is heavier than needed for a Docker Compose MVP whose goal is to make replica routing easy to inspect.
+
+This is not a permanent rejection of Nginx. If a later phase needs static asset serving, TLS termination, ingress-controller parity, or Nginx-specific operational behavior, the edge proxy decision can be reopened. For the MVP, HAProxy gives the clearest proof signal for local scaling tests.
+
 ## Detailed Docs
 
 | Topic                           | Document                                                               |
