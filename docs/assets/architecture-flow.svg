@@ -1,169 +1,503 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980" role="img" aria-labelledby="title desc">
-  <title id="title">Backend Architecture Playground request flow</title>
-  <desc id="desc">Architecture diagram showing client traffic through HAProxy, API replicas, Redis, PgBouncer, Postgres, transactional outbox, RabbitMQ, worker service, observability, retry queue, and dead letter queue.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="1480" viewBox="0 0 2200 1480" role="img" aria-labelledby="title desc">
+  <title id="title">Backend Architecture Playground infrastructure topology</title>
+  <desc id="desc">Readable infrastructure diagram showing client and test tools flowing through HAProxy, API replicas, Redis cache and rate limiting, PgBouncer, Postgres tables, transactional outbox, RabbitMQ queues, worker processing, retry and DLQ, migrations, seed data, and observability.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#f8fafc"/>
-      <stop offset="100%" stop-color="#eef2f7"/>
+      <stop offset="52%" stop-color="#edf4fb"/>
+      <stop offset="100%" stop-color="#eefdf7"/>
     </linearGradient>
-    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#2563eb"/>
-      <stop offset="100%" stop-color="#0f766e"/>
-    </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.12"/>
+    <filter id="shadow" x="-14%" y="-14%" width="128%" height="132%">
+      <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#0f172a" flood-opacity="0.11"/>
     </filter>
-    <marker id="arrow" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto">
-      <path d="M2,2 L10,6 L2,10 Z" fill="#2563eb"/>
+    <marker id="blue-arrow" markerWidth="13" markerHeight="13" refX="10.5" refY="6.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L11,6.5 L2,11 Z" fill="#2563eb"/>
     </marker>
-    <marker id="arrow-teal" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto">
-      <path d="M2,2 L10,6 L2,10 Z" fill="#0f766e"/>
+    <marker id="green-arrow" markerWidth="13" markerHeight="13" refX="10.5" refY="6.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L11,6.5 L2,11 Z" fill="#059669"/>
     </marker>
+    <marker id="amber-arrow" markerWidth="13" markerHeight="13" refX="10.5" refY="6.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L11,6.5 L2,11 Z" fill="#d97706"/>
+    </marker>
+    <marker id="red-arrow" markerWidth="13" markerHeight="13" refX="10.5" refY="6.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L11,6.5 L2,11 Z" fill="#dc2626"/>
+    </marker>
+    <marker id="purple-arrow" markerWidth="13" markerHeight="13" refX="10.5" refY="6.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L11,6.5 L2,11 Z" fill="#7c3aed"/>
+    </marker>
+    <symbol id="i-screen" viewBox="0 0 40 40">
+      <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="7" y="9" width="26" height="18" rx="3"/>
+        <path d="M16 33h8M20 27v6"/>
+      </g>
+    </symbol>
+    <symbol id="i-gauge" viewBox="0 0 40 40">
+      <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 27a14 14 0 1 1 24 0"/>
+        <path d="M20 23l8-8"/>
+        <path d="M12 27h16"/>
+      </g>
+    </symbol>
+    <symbol id="i-script" viewBox="0 0 40 40">
+      <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="8" y="9" width="24" height="24" rx="4"/>
+        <path d="M14 18l4 4-4 4M22 26h6"/>
+      </g>
+    </symbol>
+    <symbol id="i-test" viewBox="0 0 40 40">
+      <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="8" width="22" height="26" rx="4"/>
+        <path d="M15 21l4 4 7-9M15 13h10"/>
+      </g>
+    </symbol>
+    <symbol id="i-dashboard" viewBox="0 0 40 40">
+      <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="8" y="9" width="24" height="22" rx="4"/>
+        <path d="M8 17h24M15 25h2M23 25h2"/>
+      </g>
+    </symbol>
+    <symbol id="i-shield" viewBox="0 0 40 40">
+      <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 6l13 5v8c0 8-5 13-13 16C12 32 7 27 7 19v-8l13-5z"/>
+        <path d="M15 20l4 4 7-8"/>
+      </g>
+    </symbol>
+    <symbol id="i-api" viewBox="0 0 40 40">
+      <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="8" width="22" height="9" rx="3"/>
+        <rect x="9" y="23" width="22" height="9" rx="3"/>
+        <path d="M15 12.5h.1M15 27.5h.1M21 17v6"/>
+      </g>
+    </symbol>
+    <symbol id="i-cache" viewBox="0 0 40 40">
+      <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 12l8-5 8 5-8 5-8-5z"/>
+        <path d="M12 20l8 5 8-5M12 28l8 5 8-5"/>
+      </g>
+    </symbol>
+    <symbol id="i-db" viewBox="0 0 40 40">
+      <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <ellipse cx="20" cy="10" rx="12" ry="5"/>
+        <path d="M8 10v20c0 3 5 5 12 5s12-2 12-5V10"/>
+        <path d="M8 20c0 3 5 5 12 5s12-2 12-5"/>
+        <path d="M8 30c0 3 5 5 12 5s12-2 12-5"/>
+      </g>
+    </symbol>
+    <symbol id="i-pool" viewBox="0 0 40 40">
+      <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="14" r="4"/>
+        <circle cx="28" cy="14" r="4"/>
+        <circle cx="20" cy="28" r="4"/>
+        <path d="M15 17l3 7M25 17l-3 7M16 14h8"/>
+      </g>
+    </symbol>
+    <symbol id="i-outbox" viewBox="0 0 40 40">
+      <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 12h22l3 16H6l3-16z"/>
+        <path d="M14 22h4l2 4h8M20 8v13M15 13l5-5 5 5"/>
+      </g>
+    </symbol>
+    <symbol id="i-queue" viewBox="0 0 40 40">
+      <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="8" y="9" width="24" height="6" rx="2"/>
+        <rect x="8" y="19" width="24" height="6" rx="2"/>
+        <rect x="8" y="29" width="24" height="6" rx="2"/>
+      </g>
+    </symbol>
+    <symbol id="i-retry" viewBox="0 0 40 40">
+      <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M28 12a11 11 0 1 0 3 11"/>
+        <path d="M28 7v5h-5"/>
+        <path d="M18 17v7l6 3"/>
+      </g>
+    </symbol>
+    <symbol id="i-dlq" viewBox="0 0 40 40">
+      <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 6l14 25H6L20 6z"/>
+        <path d="M20 16v7M20 29h.1"/>
+      </g>
+    </symbol>
+    <symbol id="i-worker" viewBox="0 0 40 40">
+      <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="20" cy="20" r="5"/>
+        <path d="M20 7v5M20 28v5M7 20h5M28 20h5M11 11l4 4M25 25l4 4M29 11l-4 4M15 25l-4 4"/>
+      </g>
+    </symbol>
+    <symbol id="i-chart" viewBox="0 0 40 40">
+      <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 31h24"/>
+        <path d="M12 27V17M20 27V10M28 27V21"/>
+      </g>
+    </symbol>
+    <symbol id="i-sql" viewBox="0 0 40 40">
+      <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <ellipse cx="20" cy="10" rx="12" ry="5"/>
+        <path d="M8 10v14c0 3 5 5 12 5s12-2 12-5V10"/>
+        <path d="M14 34h12M20 29v5"/>
+      </g>
+    </symbol>
     <style>
-      .title { font-family: Arial, Helvetica, sans-serif; font-weight: 800; font-size: 34px; fill: #0f172a; }
-      .subtitle { font-family: Arial, Helvetica, sans-serif; font-size: 17px; fill: #475569; }
-      .lane { fill: #ffffff; stroke: #d8e0ea; stroke-width: 1.5; rx: 24; filter: url(#shadow); }
-      .lane-title { font-family: Arial, Helvetica, sans-serif; font-weight: 700; font-size: 16px; letter-spacing: .08em; fill: #64748b; }
-      .box { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.5; rx: 18; filter: url(#shadow); }
-      .box-blue { fill: #eff6ff; stroke: #93c5fd; }
-      .box-teal { fill: #ecfdf5; stroke: #5eead4; }
-      .box-amber { fill: #fffbeb; stroke: #fbbf24; }
-      .box-red { fill: #fef2f2; stroke: #fca5a5; }
-      .box-violet { fill: #f5f3ff; stroke: #c4b5fd; }
-      .box-gray { fill: #f8fafc; stroke: #cbd5e1; }
-      .node-title { font-family: Arial, Helvetica, sans-serif; font-weight: 800; font-size: 19px; fill: #0f172a; }
-      .node-text { font-family: Arial, Helvetica, sans-serif; font-size: 13px; fill: #475569; }
-      .small { font-family: Arial, Helvetica, sans-serif; font-size: 12px; fill: #64748b; }
-      .edge { stroke: #2563eb; stroke-width: 3; fill: none; marker-end: url(#arrow); }
-      .edge-teal { stroke: #0f766e; stroke-width: 3; fill: none; marker-end: url(#arrow-teal); }
-      .edge-dash { stroke: #64748b; stroke-width: 2.4; stroke-dasharray: 8 8; fill: none; marker-end: url(#arrow); }
-      .label { font-family: Arial, Helvetica, sans-serif; font-weight: 700; font-size: 12px; fill: #1e293b; }
-      .pill { fill: #0f172a; rx: 16; }
-      .pill-text { font-family: Arial, Helvetica, sans-serif; font-size: 12px; font-weight: 700; fill: #ffffff; }
+      .page-title { font-family: Inter, Segoe UI, Arial, sans-serif; font-size: 42px; font-weight: 850; fill: #0f172a; }
+      .page-subtitle { font-family: Inter, Segoe UI, Arial, sans-serif; font-size: 18px; fill: #475569; }
+      .zone { fill: rgba(255,255,255,0.74); stroke: #cbd5e1; stroke-width: 1.5; rx: 28; filter: url(#shadow); }
+      .zone-title { font-family: Inter, Segoe UI, Arial, sans-serif; font-size: 14px; font-weight: 850; letter-spacing: .1em; fill: #64748b; }
+      .node { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.5; rx: 18; filter: url(#shadow); }
+      .blue { fill: #eff6ff; stroke: #93c5fd; }
+      .green { fill: #ecfdf5; stroke: #86efac; }
+      .amber { fill: #fffbeb; stroke: #fbbf24; }
+      .red { fill: #fef2f2; stroke: #fca5a5; }
+      .purple { fill: #f5f3ff; stroke: #c4b5fd; }
+      .slate { fill: #f8fafc; stroke: #cbd5e1; }
+      .dark { fill: #111827; stroke: #334155; }
+      .title { font-family: Inter, Segoe UI, Arial, sans-serif; font-size: 20px; font-weight: 820; fill: #0f172a; }
+      .title-light { font-family: Inter, Segoe UI, Arial, sans-serif; font-size: 20px; font-weight: 820; fill: #f8fafc; }
+      .title-sm { font-family: Inter, Segoe UI, Arial, sans-serif; font-size: 15px; font-weight: 800; fill: #0f172a; }
+      .body { font-family: Inter, Segoe UI, Arial, sans-serif; font-size: 13px; fill: #475569; }
+      .small { font-family: Inter, Segoe UI, Arial, sans-serif; font-size: 11.5px; fill: #64748b; }
+      .mono { font-family: Consolas, "Cascadia Mono", monospace; font-size: 11.2px; fill: #334155; }
+      .mono-light { font-family: Consolas, "Cascadia Mono", monospace; font-size: 11.2px; fill: #cbd5e1; }
+      .label { font-family: Inter, Segoe UI, Arial, sans-serif; font-size: 12px; font-weight: 800; fill: #1e293b; }
+      .label-green { fill: #047857; }
+      .label-amber { fill: #b45309; }
+      .label-red { fill: #b91c1c; }
+      .label-purple { fill: #6d28d9; }
+      .line-blue { stroke: #2563eb; stroke-width: 3.2; fill: none; marker-end: url(#blue-arrow); }
+      .line-green { stroke: #059669; stroke-width: 3.2; fill: none; marker-end: url(#green-arrow); }
+      .line-amber { stroke: #d97706; stroke-width: 3.2; fill: none; marker-end: url(#amber-arrow); }
+      .line-red { stroke: #dc2626; stroke-width: 3.2; fill: none; marker-end: url(#red-arrow); }
+      .line-purple { stroke: #7c3aed; stroke-width: 3; fill: none; marker-end: url(#purple-arrow); }
+      .dash-blue { stroke: #2563eb; stroke-width: 2.3; stroke-dasharray: 8 8; fill: none; marker-end: url(#blue-arrow); }
+      .dash-green { stroke: #059669; stroke-width: 2.3; stroke-dasharray: 8 8; fill: none; marker-end: url(#green-arrow); }
+      .dash-purple { stroke: #7c3aed; stroke-width: 2.3; stroke-dasharray: 8 8; fill: none; marker-end: url(#purple-arrow); }
+      .hair { stroke: #cbd5e1; stroke-width: 1.1; fill: none; }
+      .table { fill: rgba(255,255,255,0.72); stroke: #dbe4ee; stroke-width: 1; rx: 9; }
+      .pill { rx: 14; }
+      .pill-text { font-family: Inter, Segoe UI, Arial, sans-serif; font-size: 11px; font-weight: 800; fill: #ffffff; }
+      .legend { font-family: Inter, Segoe UI, Arial, sans-serif; font-size: 11.7px; fill: #334155; }
+      .num { font-family: Inter, Segoe UI, Arial, sans-serif; font-size: 12px; font-weight: 850; fill: #ffffff; }
+      .icon-chip { fill: #ffffff; fill-opacity: .86; stroke: #cbd5e1; stroke-width: 1; }
+      .icon-blue { color: #2563eb; }
+      .icon-green { color: #059669; }
+      .icon-amber { color: #d97706; }
+      .icon-red { color: #dc2626; }
+      .icon-purple { color: #7c3aed; }
+      .icon-slate { color: #475569; }
     </style>
   </defs>
 
-  <rect width="1600" height="980" fill="url(#bg)"/>
-  <text x="64" y="62" class="title">Backend Architecture Playground</text>
-  <text x="64" y="94" class="subtitle">Local enterprise-style backend flow: protected entry, horizontal API replicas, pooled DB access, durable events, worker retries, and measurable operations.</text>
+  <rect width="2200" height="1480" fill="url(#bg)"/>
 
-  <rect x="54" y="132" width="1492" height="178" class="lane"/>
-  <text x="80" y="164" class="lane-title">EDGE AND REQUEST PROTECTION</text>
+  <text x="64" y="72" class="page-title">Backend Architecture Playground: Infra Flow</text>
+  <text x="66" y="106" class="page-subtitle">A single topology view for request routing, cache HIT/MISS, DB pooling, transactional outbox, queues, retries, workers, migrations, load tools, and observability.</text>
 
-  <rect x="86" y="192" width="174" height="78" class="box box-blue"/>
-  <text x="110" y="223" class="node-title">Client</text>
-  <text x="110" y="248" class="node-text">browser, script, k6</text>
+  <rect x="1544" y="40" width="590" height="92" class="node slate"/>
+  <rect x="1570" y="62" width="66" height="22" fill="#2563eb" class="pill"/><text x="1586" y="78" class="pill-text">SYNC</text>
+  <text x="1646" y="78" class="legend">HTTP / SQL request path</text>
+  <rect x="1570" y="92" width="66" height="22" fill="#059669" class="pill"/><text x="1585" y="108" class="pill-text">STATE</text>
+  <text x="1646" y="108" class="legend">cache, rate limit, successful processing</text>
+  <rect x="1878" y="62" width="66" height="22" fill="#d97706" class="pill"/><text x="1890" y="78" class="pill-text">ASYNC</text>
+  <text x="1954" y="78" class="legend">outbox / broker path</text>
+  <rect x="1878" y="92" width="66" height="22" fill="#dc2626" class="pill"/><text x="1897" y="108" class="pill-text">FAIL</text>
+  <text x="1954" y="108" class="legend">retry and DLQ path</text>
 
-  <rect x="338" y="174" width="238" height="114" class="box box-blue"/>
-  <text x="366" y="206" class="node-title">HAProxy</text>
-  <text x="366" y="231" class="node-text">localhost:8080 API entry</text>
-  <text x="366" y="253" class="node-text">least-connections routing</text>
-  <text x="366" y="275" class="node-text">active health checks</text>
+  <!-- External / host zone -->
+  <rect x="54" y="178" width="338" height="1040" class="zone"/>
+  <text x="82" y="212" class="zone-title">HOST + CALLERS</text>
 
-  <rect x="648" y="174" width="258" height="114" class="box box-amber"/>
-  <text x="676" y="206" class="node-title">Request Guardrails</text>
-  <text x="676" y="231" class="node-text">connection cap at edge</text>
-  <text x="676" y="253" class="node-text">forwarded IP normalization</text>
-  <text x="676" y="275" class="node-text">readiness removes bad replicas</text>
+  <rect x="94" y="262" width="248" height="86" class="node blue"/>
+  <circle cx="306" cy="304" r="22" class="icon-chip"/>
+  <use href="#i-screen" x="290" y="288" width="32" height="32" class="icon-blue"/>
+  <text x="122" y="293" class="title">Client</text>
+  <text x="122" y="318" class="body">browser, app, curl</text>
+  <text x="122" y="338" class="mono">localhost:8080</text>
 
-  <rect x="1018" y="174" width="244" height="114" class="box box-violet"/>
-  <text x="1046" y="206" class="node-title">API Replicas</text>
-  <text x="1046" y="231" class="node-text">Fastify + TypeScript</text>
-  <text x="1046" y="253" class="node-text">auth, zod validation</text>
-  <text x="1046" y="275" class="node-text">graceful HTTP drain</text>
+  <rect x="94" y="408" width="248" height="86" class="node purple"/>
+  <circle cx="306" cy="450" r="22" class="icon-chip"/>
+  <use href="#i-gauge" x="290" y="434" width="32" height="32" class="icon-purple"/>
+  <text x="122" y="439" class="title">k6</text>
+  <text x="122" y="464" class="body">mixed, login, abuse</text>
+  <text x="122" y="484" class="mono">stress scenarios</text>
 
-  <rect x="1286" y="178" width="166" height="106" class="box box-violet"/>
-  <text x="1312" y="211" class="node-title">Scale Target</text>
-  <text x="1312" y="236" class="node-text">1 or 4 replicas</text>
-  <text x="1312" y="258" class="node-text">same Docker network</text>
+  <rect x="94" y="554" width="248" height="86" class="node amber"/>
+  <circle cx="306" cy="596" r="22" class="icon-chip"/>
+  <use href="#i-script" x="290" y="580" width="32" height="32" class="icon-amber"/>
+  <text x="122" y="585" class="title">Seed Script</text>
+  <text x="122" y="610" class="body">orders via API path</text>
+  <text x="122" y="630" class="mono">seed:orders</text>
 
-  <path d="M260 231 H338" class="edge"/>
-  <path d="M576 231 H648" class="edge"/>
-  <path d="M906 231 H1018" class="edge"/>
-  <path d="M1262 231 H1286" class="edge"/>
-  <text x="282" y="215" class="label">HTTP</text>
-  <text x="594" y="215" class="label">protect</text>
-  <text x="932" y="215" class="label">route healthy</text>
+  <rect x="94" y="700" width="248" height="96" class="node green"/>
+  <circle cx="306" cy="746" r="22" class="icon-chip"/>
+  <use href="#i-test" x="290" y="730" width="32" height="32" class="icon-green"/>
+  <text x="122" y="731" class="title">Integration Tests</text>
+  <text x="122" y="756" class="body">cache, DLQ, order flow</text>
+  <text x="122" y="776" class="mono">test:integration</text>
 
-  <rect x="54" y="348" width="1492" height="252" class="lane"/>
-  <text x="80" y="380" class="lane-title">SYNCHRONOUS API PATH</text>
+  <rect x="94" y="872" width="248" height="96" class="node slate"/>
+  <circle cx="306" cy="918" r="22" class="icon-chip"/>
+  <use href="#i-script" x="290" y="902" width="32" height="32" class="icon-slate"/>
+  <text x="122" y="903" class="title">Migration Runner</text>
+  <text x="122" y="928" class="body">forward-only DDL</text>
+  <text x="122" y="948" class="mono">migrate -> 15432</text>
 
-  <rect x="102" y="424" width="226" height="116" class="box box-teal"/>
-  <text x="130" y="458" class="node-title">Redis</text>
-  <text x="130" y="483" class="node-text">distributed rate limits</text>
-  <text x="130" y="505" class="node-text">read-through order cache</text>
-  <text x="130" y="527" class="node-text">fail-open behavior</text>
+  <rect x="94" y="1042" width="248" height="100" class="node slate"/>
+  <circle cx="306" cy="1090" r="22" class="icon-chip"/>
+  <use href="#i-dashboard" x="290" y="1074" width="32" height="32" class="icon-slate"/>
+  <text x="122" y="1073" class="title">Admin Views</text>
+  <text x="122" y="1098" class="body">RabbitMQ, SQL, metrics</text>
+  <text x="122" y="1118" class="mono">15672 / 15432 / 16432</text>
 
-  <rect x="450" y="424" width="230" height="116" class="box box-violet"/>
-  <text x="478" y="458" class="node-title">API Logic</text>
-  <text x="478" y="483" class="node-text">JWT auth and refresh tokens</text>
-  <text x="478" y="505" class="node-text">order CRUD</text>
-  <text x="478" y="527" class="node-text">correlation IDs</text>
+  <!-- Edge zone -->
+  <rect x="456" y="178" width="330" height="392" class="zone"/>
+  <text x="484" y="212" class="zone-title">EDGE</text>
 
-  <rect x="800" y="424" width="236" height="116" class="box box-blue"/>
-  <text x="828" y="458" class="node-title">PgBouncer</text>
-  <text x="828" y="483" class="node-text">pgbouncer:6432</text>
-  <text x="828" y="505" class="node-text">transaction pooling</text>
-  <text x="828" y="527" class="node-text">reduces DB connection pressure</text>
+  <rect x="502" y="264" width="238" height="170" class="node blue"/>
+  <circle cx="700" cy="306" r="23" class="icon-chip"/>
+  <use href="#i-shield" x="683" y="289" width="34" height="34" class="icon-blue"/>
+  <text x="532" y="296" class="title">HAProxy</text>
+  <text x="532" y="324" class="mono">reverse-proxy:8080</text>
+  <text x="532" y="348" class="mono">stats: 8404</text>
+  <line x1="532" y1="366" x2="708" y2="366" class="hair"/>
+  <text x="532" y="391" class="body">least-connections</text>
+  <text x="532" y="414" class="body">active health checks</text>
 
-  <rect x="1156" y="424" width="260" height="116" class="box box-blue"/>
-  <text x="1184" y="458" class="node-title">Postgres</text>
-  <text x="1184" y="483" class="node-text">postgres:5432</text>
-  <text x="1184" y="505" class="node-text">users, orders, refresh tokens</text>
-  <text x="1184" y="527" class="node-text">outbox and idempotency</text>
+  <rect x="502" y="462" width="238" height="74" class="node amber"/>
+  <circle cx="700" cy="499" r="20" class="icon-chip"/>
+  <use href="#i-shield" x="686" y="485" width="28" height="28" class="icon-amber"/>
+  <text x="532" y="493" class="title-sm">Edge guardrails</text>
+  <text x="532" y="516" class="body">connection cap + IP rules</text>
 
-  <path d="M565 424 V352 C565 324 1140 324 1140 288" class="edge-dash"/>
-  <path d="M450 482 H328" class="edge-teal"/>
-  <path d="M680 482 H800" class="edge"/>
-  <path d="M1036 482 H1156" class="edge"/>
-  <text x="352" y="464" class="label">cache + rate limit</text>
-  <text x="704" y="464" class="label">pooled SQL</text>
-  <text x="1064" y="464" class="label">backend connections</text>
+  <!-- App zone -->
+  <rect x="850" y="178" width="470" height="624" class="zone"/>
+  <text x="878" y="212" class="zone-title">APPLICATION</text>
 
-  <rect x="54" y="638" width="1492" height="236" class="lane"/>
-  <text x="80" y="670" class="lane-title">DURABLE ASYNC EVENT PATH</text>
+  <rect x="900" y="244" width="360" height="214" class="node purple"/>
+  <circle cx="1208" cy="286" r="24" class="icon-chip"/>
+  <use href="#i-api" x="1190" y="268" width="36" height="36" class="icon-purple"/>
+  <text x="932" y="278" class="title">api-service replicas</text>
+  <text x="932" y="306" class="mono">api-service:3000</text>
+  <text x="932" y="330" class="body">auth, zod validation, order API</text>
+  <text x="932" y="354" class="body">correlation/request IDs</text>
+  <text x="932" y="378" class="body">graceful request drain</text>
+  <rect x="932" y="404" width="86" height="28" class="node blue"/>
+  <text x="952" y="423" class="small">replica 1</text>
+  <rect x="1032" y="404" width="86" height="28" class="node blue"/>
+  <text x="1052" y="423" class="small">replica 2</text>
+  <rect x="1132" y="404" width="86" height="28" class="node blue"/>
+  <text x="1157" y="423" class="small">...</text>
 
-  <rect x="104" y="716" width="232" height="104" class="box box-amber"/>
-  <text x="132" y="748" class="node-title">Transactional Outbox</text>
-  <text x="132" y="773" class="node-text">order + event in one commit</text>
-  <text x="132" y="795" class="node-text">unpublished rows are durable</text>
+  <rect x="900" y="512" width="160" height="96" class="node green"/>
+  <circle cx="1024" cy="546" r="18" class="icon-chip"/>
+  <use href="#i-gauge" x="1011" y="533" width="26" height="26" class="icon-green"/>
+  <text x="930" y="543" class="title-sm">Rate limit</text>
+  <text x="930" y="567" class="body">shared counter</text>
+  <text x="930" y="588" class="body">429 when exceeded</text>
 
-  <rect x="450" y="716" width="238" height="104" class="box box-amber"/>
-  <text x="478" y="748" class="node-title">Outbox Publisher</text>
-  <text x="478" y="773" class="node-text">polls with SKIP LOCKED</text>
-  <text x="478" y="795" class="node-text">broker confirms then marks sent</text>
+  <rect x="1100" y="512" width="160" height="96" class="node green"/>
+  <circle cx="1224" cy="546" r="18" class="icon-chip"/>
+  <use href="#i-cache" x="1211" y="533" width="26" height="26" class="icon-green"/>
+  <text x="1130" y="543" class="title-sm">Cache</text>
+  <text x="1130" y="567" class="body">GET order</text>
+  <text x="1130" y="588" class="body">HIT or MISS</text>
 
-  <rect x="804" y="716" width="226" height="104" class="box box-teal"/>
-  <text x="832" y="748" class="node-title">RabbitMQ</text>
-  <text x="832" y="773" class="node-text">orders exchange</text>
-  <text x="832" y="795" class="node-text">durable order.created queue</text>
+  <rect x="900" y="662" width="360" height="96" class="node amber"/>
+  <circle cx="1208" cy="704" r="22" class="icon-chip"/>
+  <use href="#i-outbox" x="1192" y="688" width="32" height="32" class="icon-amber"/>
+  <text x="932" y="694" class="title-sm">Create-order transaction</text>
+  <text x="932" y="720" class="body">INSERT orders + INSERT outbox_events in one Postgres commit</text>
+  <text x="932" y="742" class="mono">POST /v1/orders</text>
 
-  <rect x="1146" y="716" width="252" height="104" class="box box-violet"/>
-  <text x="1174" y="748" class="node-title">Worker Service</text>
-  <text x="1174" y="773" class="node-text">prefetch backpressure</text>
-  <text x="1174" y="795" class="node-text">idempotent event processing</text>
+  <!-- State zone -->
+  <rect x="1388" y="178" width="700" height="624" class="zone"/>
+  <text x="1416" y="212" class="zone-title">STATE</text>
 
-  <rect x="804" y="842" width="226" height="62" class="box box-red"/>
-  <text x="832" y="869" class="node-title">Retry + DLQ</text>
-  <text x="832" y="891" class="node-text">bounded poison-message handling</text>
+  <rect x="1434" y="244" width="230" height="162" class="node green"/>
+  <circle cx="1622" cy="286" r="23" class="icon-chip"/>
+  <use href="#i-cache" x="1605" y="269" width="34" height="34" class="icon-green"/>
+  <text x="1464" y="278" class="title">Redis</text>
+  <text x="1464" y="306" class="mono">redis:6379</text>
+  <text x="1464" y="332" class="body">rate:{client}:{window}</text>
+  <text x="1464" y="356" class="body">order:{id}</text>
+  <rect x="1464" y="374" width="62" height="22" fill="#059669" class="pill"/>
+  <text x="1478" y="390" class="pill-text">HIT</text>
+  <rect x="1538" y="374" width="68" height="22" fill="#d97706" class="pill"/>
+  <text x="1548" y="390" class="pill-text">MISS</text>
 
-  <path d="M220 716 V540" class="edge-teal"/>
-  <path d="M336 768 H450" class="edge"/>
-  <path d="M688 768 H804" class="edge"/>
-  <path d="M1030 768 H1146" class="edge"/>
-  <path d="M1272 716 V540" class="edge-teal"/>
-  <path d="M917 820 V842" class="edge-dash"/>
-  <text x="238" y="626" class="label">same DB transaction</text>
-  <text x="368" y="750" class="label">poll</text>
-  <text x="720" y="750" class="label">publish</text>
-  <text x="1060" y="750" class="label">consume</text>
-  <text x="1292" y="626" class="label">processed_events</text>
+  <rect x="1722" y="244" width="246" height="162" class="node blue"/>
+  <circle cx="1924" cy="286" r="23" class="icon-chip"/>
+  <use href="#i-pool" x="1907" y="269" width="34" height="34" class="icon-blue"/>
+  <text x="1752" y="278" class="title">PgBouncer</text>
+  <text x="1752" y="306" class="mono">pgbouncer:6432</text>
+  <text x="1752" y="330" class="mono">host: 16432</text>
+  <text x="1752" y="356" class="body">transaction pooling</text>
+  <text x="1752" y="380" class="body">API DB traffic only</text>
 
-  <rect x="54" y="904" width="1492" height="44" fill="#0f172a" rx="18"/>
-  <text x="84" y="932" class="pill-text">Observability:</text>
-  <text x="186" y="932" class="pill-text">Prometheus scrapes API, outbox, and worker metrics. Grafana visualizes latency, request rate, outbox backlog, worker throughput, in-flight messages, and DLQ volume.</text>
+  <rect x="1434" y="492" width="534" height="256" class="node blue"/>
+  <circle cx="1918" cy="536" r="25" class="icon-chip"/>
+  <use href="#i-db" x="1899" y="517" width="38" height="38" class="icon-blue"/>
+  <text x="1464" y="526" class="title">Postgres</text>
+  <text x="1464" y="554" class="mono">postgres:5432 / host: 15432</text>
+  <rect x="1464" y="584" width="112" height="38" class="table"/>
+  <text x="1482" y="608" class="title-sm">users</text>
+  <rect x="1592" y="584" width="146" height="38" class="table"/>
+  <text x="1608" y="608" class="title-sm">refresh_tokens</text>
+  <rect x="1754" y="584" width="112" height="38" class="table"/>
+  <text x="1772" y="608" class="title-sm">orders</text>
+  <rect x="1464" y="640" width="160" height="38" class="table"/>
+  <text x="1482" y="664" class="title-sm">outbox_events</text>
+  <rect x="1642" y="640" width="168" height="38" class="table"/>
+  <text x="1660" y="664" class="title-sm">processed_events</text>
+  <rect x="1828" y="640" width="112" height="38" class="table"/>
+  <text x="1846" y="664" class="title-sm">schema</text>
+  <text x="1464" y="718" class="body">source of truth, migration records, durable outbox, worker idempotency</text>
 
-  <rect x="1192" y="54" width="306" height="58" class="box box-gray"/>
-  <text x="1216" y="79" class="small">Default local host ports</text>
-  <text x="1216" y="100" class="small">API 8080 / Postgres 15432 / PgBouncer 16432</text>
+  <!-- Async zone -->
+  <rect x="456" y="860" width="1070" height="474" class="zone"/>
+  <text x="484" y="894" class="zone-title">ASYNC EVENT PIPELINE</text>
+
+  <rect x="512" y="962" width="216" height="118" class="node amber"/>
+  <circle cx="690" cy="1002" r="21" class="icon-chip"/>
+  <use href="#i-outbox" x="675" y="987" width="30" height="30" class="icon-amber"/>
+  <text x="542" y="996" class="title-sm">Outbox Publisher</text>
+  <text x="542" y="1022" class="body">poll unpublished rows</text>
+  <text x="542" y="1044" class="body">SKIP LOCKED</text>
+  <text x="542" y="1066" class="body">broker confirms</text>
+
+  <rect x="806" y="962" width="210" height="118" class="node amber"/>
+  <circle cx="978" cy="1002" r="21" class="icon-chip"/>
+  <use href="#i-queue" x="963" y="987" width="30" height="30" class="icon-amber"/>
+  <text x="836" y="996" class="title-sm">Broker Exchange</text>
+  <text x="836" y="1022" class="mono">RabbitMQ: orders</text>
+  <text x="836" y="1044" class="body">routing key</text>
+  <text x="836" y="1066" class="mono">order.created</text>
+
+  <rect x="1096" y="940" width="184" height="72" class="node amber"/>
+  <circle cx="1244" cy="976" r="18" class="icon-chip"/>
+  <use href="#i-queue" x="1231" y="963" width="26" height="26" class="icon-amber"/>
+  <text x="1126" y="972" class="title-sm">Primary</text>
+  <text x="1126" y="994" class="mono">order.created</text>
+
+  <rect x="1096" y="1048" width="184" height="72" class="node red"/>
+  <circle cx="1244" cy="1084" r="18" class="icon-chip"/>
+  <use href="#i-retry" x="1231" y="1071" width="26" height="26" class="icon-red"/>
+  <text x="1126" y="1080" class="title-sm">Retry</text>
+  <text x="1126" y="1102" class="mono">order.created.retry</text>
+
+  <rect x="1096" y="1156" width="184" height="72" class="node red"/>
+  <circle cx="1244" cy="1192" r="18" class="icon-chip"/>
+  <use href="#i-dlq" x="1231" y="1179" width="26" height="26" class="icon-red"/>
+  <text x="1126" y="1188" class="title-sm">DLQ</text>
+  <text x="1126" y="1210" class="mono">order.created.dlq</text>
+
+  <rect x="1352" y="962" width="132" height="266" class="node purple"/>
+  <circle cx="1448" cy="1002" r="20" class="icon-chip"/>
+  <use href="#i-worker" x="1434" y="988" width="28" height="28" class="icon-purple"/>
+  <text x="1382" y="996" class="title-sm">Worker</text>
+  <text x="1382" y="1022" class="body">prefetch</text>
+  <text x="1382" y="1044" class="body">idempotent</text>
+  <text x="1382" y="1066" class="body">drain</text>
+  <line x1="1382" y1="1084" x2="1454" y2="1084" class="hair"/>
+  <text x="1382" y="1110" class="body">writes</text>
+  <text x="1382" y="1132" class="mono">processed_events</text>
+
+  <!-- Observability zone -->
+  <rect x="1580" y="860" width="508" height="474" class="zone"/>
+  <text x="1608" y="894" class="zone-title">OBSERVABILITY + ADMIN</text>
+
+  <rect x="1628" y="956" width="184" height="110" class="node purple"/>
+  <circle cx="1774" cy="996" r="20" class="icon-chip"/>
+  <use href="#i-chart" x="1760" y="982" width="28" height="28" class="icon-purple"/>
+  <text x="1658" y="990" class="title-sm">Prometheus</text>
+  <text x="1658" y="1016" class="mono">localhost:9090</text>
+  <text x="1658" y="1040" class="body">scrapes metrics</text>
+
+  <rect x="1860" y="956" width="184" height="110" class="node purple"/>
+  <circle cx="2006" cy="996" r="20" class="icon-chip"/>
+  <use href="#i-dashboard" x="1992" y="982" width="28" height="28" class="icon-purple"/>
+  <text x="1890" y="990" class="title-sm">Grafana</text>
+  <text x="1890" y="1016" class="mono">localhost:3001</text>
+  <text x="1890" y="1040" class="body">dashboards</text>
+
+  <rect x="1628" y="1138" width="184" height="110" class="node slate"/>
+  <circle cx="1774" cy="1178" r="20" class="icon-chip"/>
+  <use href="#i-queue" x="1760" y="1164" width="28" height="28" class="icon-slate"/>
+  <text x="1658" y="1172" class="title-sm">RabbitMQ UI</text>
+  <text x="1658" y="1198" class="mono">localhost:15672</text>
+  <text x="1658" y="1222" class="body">queues + DLQ</text>
+
+  <rect x="1860" y="1138" width="184" height="110" class="node slate"/>
+  <circle cx="2006" cy="1178" r="20" class="icon-chip"/>
+  <use href="#i-sql" x="1992" y="1164" width="28" height="28" class="icon-slate"/>
+  <text x="1890" y="1172" class="title-sm">SQL Clients</text>
+  <text x="1890" y="1198" class="mono">15432 / 16432</text>
+  <text x="1890" y="1222" class="body">data inspection</text>
+
+  <!-- Main sync path -->
+  <path d="M342 305 H502" class="line-blue"/>
+  <path d="M740 348 H900" class="line-blue"/>
+  <path d="M1260 324 H1722" class="line-blue"/>
+  <path d="M1845 406 V492" class="line-blue"/>
+
+  <!-- Host tools to edge, fewer labels -->
+  <path d="M342 451 C410 451 430 370 502 370" class="dash-purple"/>
+  <path d="M342 597 C420 597 428 388 502 388" class="line-amber"/>
+  <path d="M342 748 C424 748 430 410 502 410" class="dash-green"/>
+
+  <!-- Migration/admin to DB and UIs, routed along bottom to avoid crossing core -->
+  <path d="M342 920 H420 V760 H1434" class="line-blue"/>
+  <path d="M342 1092 H420 V1282 H1628" class="dash-purple"/>
+  <path d="M342 1116 H420 V1308 H1860" class="dash-purple"/>
+
+  <!-- Redis paths: short loops above/beside app -->
+  <path d="M1060 560 H1434" class="line-green"/>
+  <path d="M1260 560 C1322 560 1350 326 1434 326" class="line-green"/>
+  <path d="M1434 382 C1340 382 1304 534 1260 534" class="dash-green"/>
+  <text x="1290" y="514" class="label-green">HIT returns</text>
+
+  <path d="M1260 590 C1360 590 1372 630 1434 630" class="line-amber"/>
+  <text x="1288" y="624" class="label-amber">MISS reads DB</text>
+  <path d="M1434 682 C1378 722 1318 720 1260 616" class="dash-green"/>
+  <text x="1288" y="706" class="label-green">SET cache</text>
+
+  <!-- Create transaction and outbox start -->
+  <path d="M1260 710 C1360 710 1370 664 1434 664" class="line-amber"/>
+  <path d="M1434 664 C1162 818 786 834 620 962" class="line-amber"/>
+
+  <!-- Async pipeline edges -->
+  <path d="M728 1021 H806" class="line-amber"/>
+  <path d="M1016 1021 H1096" class="line-amber"/>
+  <path d="M1280 976 H1352" class="line-amber"/>
+  <path d="M1352 1122 H1280" class="line-red"/>
+  <path d="M1188 1048 V1012" class="line-red"/>
+  <path d="M1280 1084 H1352" class="line-red"/>
+  <path d="M1280 1192 H1352" class="line-red"/>
+  <path d="M1418 1228 C1418 1280 1578 758 1710 748" class="line-green"/>
+
+  <!-- Observability paths, kept in their own right-side lane -->
+  <path d="M1628 1010 C1560 1010 1548 366 1260 366" class="line-purple"/>
+  <path d="M1628 1018 H1484" class="line-purple"/>
+  <path d="M1628 1026 C1546 1026 1538 1096 1484 1096" class="line-purple"/>
+  <path d="M1812 1011 H1860" class="line-purple"/>
+
+  <!-- Compact labels and numbered notes -->
+  <circle cx="480" cy="305" r="15" fill="#2563eb"/><text x="476" y="310" class="num">1</text>
+  <circle cx="880" cy="348" r="15" fill="#2563eb"/><text x="876" y="353" class="num">2</text>
+  <circle cx="1408" cy="560" r="15" fill="#059669"/><text x="1404" y="565" class="num">3</text>
+  <circle cx="1408" cy="710" r="15" fill="#d97706"/><text x="1404" y="715" class="num">4</text>
+  <circle cx="1038" cy="1021" r="15" fill="#d97706"/><text x="1034" y="1026" class="num">5</text>
+  <circle cx="1304" cy="1084" r="15" fill="#dc2626"/><text x="1300" y="1089" class="num">6</text>
+
+  <rect x="54" y="1280" width="338" height="124" class="node dark"/>
+  <text x="84" y="1314" class="title-light">Flow key</text>
+  <text x="84" y="1342" class="mono-light">1 Client enters HAProxy</text>
+  <text x="84" y="1368" class="mono-light">2 Route to healthy API</text>
+  <text x="84" y="1394" class="mono-light">3 Redis HIT can return early</text>
+
+  <rect x="456" y="1360" width="1070" height="70" class="node dark"/>
+  <text x="486" y="1388" class="mono-light">4 Cache MISS / writes use PgBouncer to reach Postgres.</text>
+  <text x="486" y="1414" class="mono-light">5 Outbox publisher emits committed events. 6 Worker failures retry, then land in DLQ.</text>
+
+  <rect x="1580" y="1360" width="508" height="70" class="node dark"/>
+  <text x="1610" y="1379" class="mono-light">Local ports: API 8080 | HAProxy 8404</text>
+  <text x="1610" y="1402" class="mono-light">Postgres 15432 | PgBouncer 16432 | RabbitMQ UI 15672</text>
+  <text x="1610" y="1425" class="mono-light">Prometheus 9090 | Grafana 3001</text>
 </svg>
