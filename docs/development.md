@@ -154,6 +154,18 @@ $newTokens = Invoke-RestMethod `
   -Body $refreshBody
 ```
 
+## Changing API Routes
+
+The API service is split by responsibility:
+
+- `packages/api-service/src/index.ts`: process entrypoint, dependency wiring, graceful shutdown.
+- `packages/api-service/src/app.ts`: Fastify app creation, plugins, hooks, route registration.
+- `packages/api-service/src/routes/*.routes.ts`: route/controller modules.
+- `packages/api-service/src/schemas/*.schemas.ts`: request validation schemas.
+- `packages/api-service/src/middleware/*`: auth and cross-cutting request checks.
+
+When adding a new API route, add the schema first, then the route module, then register it from `app.ts`. Keep direct process startup code out of route files so handlers stay testable.
+
 ## Seed Data
 
 The seed script creates orders through HAProxy and the public API. It exercises auth, validation, PgBouncer, Postgres writes, the transactional outbox, RabbitMQ, and the worker.

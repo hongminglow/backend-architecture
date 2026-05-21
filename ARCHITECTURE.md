@@ -61,6 +61,31 @@ The MVP uses HAProxy instead of Nginx because this playground needs measurable l
 
 This is not a permanent rejection of Nginx. If a later phase needs static asset serving, TLS termination, ingress-controller parity, or Nginx-specific operational behavior, the edge proxy decision can be reopened. For the MVP, HAProxy gives the clearest proof signal for local scaling tests.
 
+## API Service Code Organization
+
+The API service entrypoint is intentionally thin. Runtime bootstrap lives in `packages/api-service/src/index.ts`, while Fastify construction and route registration live in `packages/api-service/src/app.ts`.
+
+```text
+packages/api-service/src/
+  index.ts                  process bootstrap, dependency wiring, graceful shutdown
+  app.ts                    Fastify instance, plugins, hooks, route registration
+  config.ts                 environment parsing
+  dependencies.ts           Postgres and Redis clients
+  hooks/                    request lifecycle, metrics, drain state
+  middleware/               authentication and rate limiting
+  routes/                   HTTP route/controller modules
+  schemas/                  Zod request schemas
+  utils/                    cache, token, timeout, validation helpers
+```
+
+Current controller boundaries:
+
+```text
+routes/system.routes.ts -> health and metrics
+routes/auth.routes.ts   -> /v1/auth/*
+routes/orders.routes.ts -> /v1/orders*
+```
+
 ## Detailed Docs
 
 | Topic                           | Document                                                               |
