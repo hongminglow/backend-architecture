@@ -13,6 +13,7 @@ import {
   CACHE_NAMESPACES,
   invalidateEntity,
   invalidateListNamespace,
+  withCountCache,
   withEntityCache,
   withListCache,
 } from "../utils/cache.js";
@@ -320,7 +321,17 @@ async function fetchOrdersPage(ctx: ApiContext, query: ListOrdersQuery, userId: 
   const offset = paginationOffset(query);
   const listParams = [...params, query.pageSize, offset];
 
-  const [rowsResult, countResult] = await Promise.all([
+  // Filter-only key for the count cache; page/pageSize are deliberately
+  // excluded so all pages of the same filtered set share one cached count.
+  const countCacheQuery = {
+    userId,
+    status: query.status ?? null,
+    customerEmail: query.customerEmail?.toLowerCase() ?? null,
+    createdAfter: query.createdAfter ?? null,
+    createdBefore: query.createdBefore ?? null,
+  };
+
+  const [rowsResult, total] = await Promise.all([
     ctx.pool.query<OrderRow>(
       `SELECT ${ORDER_FIELDS}
        FROM orders
@@ -329,13 +340,19 @@ async function fetchOrdersPage(ctx: ApiContext, query: ListOrdersQuery, userId: 
        LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
       listParams,
     ),
-    ctx.pool.query<{ count: string }>(
-      `SELECT count(*)::text AS count FROM orders ${whereSql}`,
-      params,
+    withCountCache(
+      ctx,
+      { namespace: CACHE_NAMESPACES.ordersList, query: countCacheQuery },
+      async () => {
+        const result = await ctx.pool.query<{ count: string }>(
+          `SELECT count(*)::text AS count FROM orders ${whereSql}`,
+          params,
+        );
+        return Number.parseInt(result.rows[0]?.count ?? "0", 10);
+      },
     ),
   ]);
 
-  const total = Number.parseInt(countResult.rows[0]?.count ?? "0", 10);
   return {
     ...buildPaginationMeta(total, query),
     orders: rowsResult.rows,

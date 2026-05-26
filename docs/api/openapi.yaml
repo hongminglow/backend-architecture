@@ -1,0 +1,606 @@
+openapi: 3.1.0
+info:
+  title: Backend Architecture Playground API
+  version: 0.1.0
+  description: |
+    HTTP API exposed by `api-service` through HAProxy at `http://localhost:8080`.
+
+    This document is hand-maintained for now. When routes migrate to native
+    Fastify schemas (with `fastify-type-provider-zod`), this file should be
+    replaced with output from `@fastify/swagger`.
+
+    Conventions:
+      - All endpoints are versioned under `/v1`.
+      - Error responses follow the envelope `{ error: { code, message, details? } }`.
+      - Every response carries `X-Correlation-Id` and `X-Request-Id`.
+      - Rate-limited endpoints carry `X-RateLimit-Limit`, `X-RateLimit-Remaining`,
+        `X-RateLimit-Reset` and may return 429 with `Retry-After`.
+      - Cached read endpoints carry `X-Cache: HIT|MISS`.
+
+servers:
+  - url: http://localhost:8080
+    description: Local HAProxy entrypoint
+
+tags:
+  - name: auth
+    description: Registration, login, token refresh, logout.
+  - name: orders
+    description: Order create/read/update with auth scoping, idempotency, and state machine.
+  - name: system
+    description: Health probes and Prometheus metrics. Excluded from rate limiting.
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token issued by `/v1/auth/register`, `/v1/auth/login`, or `/v1/auth/refresh`.
+
+  parameters:
+    CorrelationIdHeader:
+      in: header
+      name: X-Correlation-Id
+      schema:
+        type: string
+        maxLength: 128
+      required: false
+      description: Caller-supplied correlation id; echoed back on every response and propagated through the outbox/RabbitMQ to the worker.
+
+    IdempotencyKeyHeader:
+      in: header
+      name: Idempotency-Key
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{8,128}$
+      required: false
+      description: |
+        Optional client-supplied retry-safety key for unsafe writes.
+        First request with the key is processed and cached for 24 h. Replays
+        with the same body return the cached response; replays with a
+        different body return 409 `IDEMPOTENCY_KEY_CONFLICT`. Concurrent
+        in-flight requests with the same key return 409 `IDEMPOTENT_REQUEST_IN_PROGRESS`.
+
+  headers:
+    XCorrelationId:
+      schema: { type: string }
+      description: The correlation id for this request (echoed or generated).
+    XRequestId:
+      schema: { type: string }
+      description: Per-request id, distinct from the correlation id.
+    XCache:
+      schema:
+        type: string
+        enum: [HIT, MISS]
+      description: Whether the response was served from Redis (HIT) or the data store (MISS).
+    XRateLimitLimit:
+      schema: { type: integer }
+      description: Window request limit for the caller's identity.
+    XRateLimitRemaining:
+      schema: { type: integer }
+      description: Requests remaining in the current window.
+    XRateLimitReset:
+      schema: { type: integer }
+      description: Seconds until the window resets.
+    RetryAfter:
+      schema: { type: integer }
+      description: Seconds the caller should wait before retrying after a 429 or 423.
+
+  schemas:
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Stable machine-readable error code.
+            message:
+              type: string
+              description: Human-readable summary; not safe to localize from.
+            details:
+              type: object
+              additionalProperties: true
+              description: Optional structured context (e.g. validation field paths or allowed status transitions).
+
+    OrderStatus:
+      type: string
+      enum: [pending, confirmed, shipped, delivered, cancelled]
+      description: |
+        Allowed transitions:
+          - pending   -> confirmed | cancelled
+          - confirmed -> shipped | cancelled
+          - shipped   -> delivered
+          - delivered (terminal)
+          - cancelled (terminal)
+
+    OrderItem:
+      type: object
+      required: [sku, quantity, unitPriceCents]
+      properties:
+        sku: { type: string, minLength: 1, maxLength: 64 }
+        quantity: { type: integer, minimum: 1, maximum: 1000 }
+        unitPriceCents: { type: integer, minimum: 0, maximum: 100000000 }
+
+    Order:
+      type: object
+      required:
+        [id, user_id, customer_email, items, total_cents, status, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        customer_email: { type: string, format: email }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/OrderItem" }
+        total_cents: { type: integer, minimum: 0 }
+        status: { $ref: "#/components/schemas/OrderStatus" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    OrderResponse:
+      type: object
+      required: [order]
+      properties:
+        order: { $ref: "#/components/schemas/Order" }
+
+    PaginationMeta:
+      type: object
+      required: [page, pageSize, total, totalPages, hasNext, hasPrev]
+      properties:
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        total: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+        hasNext: { type: boolean }
+        hasPrev: { type: boolean }
+
+    OrderListResponse:
+      allOf:
+        - $ref: "#/components/schemas/PaginationMeta"
+        - type: object
+          required: [orders, filters]
+          properties:
+            orders:
+              type: array
+              items: { $ref: "#/components/schemas/Order" }
+            filters:
+              type: object
+              required: [status, customerEmail, createdAfter, createdBefore]
+              description: Echo of the filter parameters that were applied (or null when absent).
+              properties:
+                status:
+                  oneOf:
+                    - { $ref: "#/components/schemas/OrderStatus" }
+                    - { type: "null" }
+                customerEmail:
+                  oneOf: [{ type: string, format: email }, { type: "null" }]
+                createdAfter:
+                  oneOf: [{ type: string, format: date-time }, { type: "null" }]
+                createdBefore:
+                  oneOf: [{ type: string, format: date-time }, { type: "null" }]
+
+    User:
+      type: object
+      required: [id, email]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+
+    AuthTokens:
+      type: object
+      required: [accessToken, refreshToken]
+      properties:
+        accessToken: { type: string, description: Short-lived JWT for the Authorization header. }
+        refreshToken: { type: string, description: Opaque token used to mint a new access token. }
+
+    AuthResponse:
+      allOf:
+        - $ref: "#/components/schemas/AuthTokens"
+        - type: object
+          required: [user]
+          properties:
+            user: { $ref: "#/components/schemas/User" }
+
+  responses:
+    StandardHeaders:
+      description: Common response headers, present on every response.
+      headers:
+        X-Correlation-Id: { $ref: "#/components/headers/XCorrelationId" }
+        X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+
+    BadRequest:
+      description: Validation error.
+      headers:
+        X-Correlation-Id: { $ref: "#/components/headers/XCorrelationId" }
+        X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+    Unauthorized:
+      description: Missing or invalid bearer token.
+      headers:
+        X-Correlation-Id: { $ref: "#/components/headers/XCorrelationId" }
+        X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+    NotFound:
+      description: Resource not found, or the caller does not own it (returned as 404 to avoid leaking existence).
+      headers:
+        X-Correlation-Id: { $ref: "#/components/headers/XCorrelationId" }
+        X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+    RateLimited:
+      description: Rate limit exceeded.
+      headers:
+        Retry-After: { $ref: "#/components/headers/RetryAfter" }
+        X-RateLimit-Limit: { $ref: "#/components/headers/XRateLimitLimit" }
+        X-RateLimit-Remaining: { $ref: "#/components/headers/XRateLimitRemaining" }
+        X-RateLimit-Reset: { $ref: "#/components/headers/XRateLimitReset" }
+        X-Correlation-Id: { $ref: "#/components/headers/XCorrelationId" }
+        X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+    InternalError:
+      description: Unhandled server error.
+      headers:
+        X-Correlation-Id: { $ref: "#/components/headers/XCorrelationId" }
+        X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+    ServiceUnavailable:
+      description: Service is shutting down or otherwise refusing new traffic.
+      headers:
+        X-Correlation-Id: { $ref: "#/components/headers/XCorrelationId" }
+        X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+paths:
+  /v1/auth/register:
+    post:
+      tags: [auth]
+      summary: Register a new user and issue tokens.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 12 }
+      responses:
+        "201":
+          description: User created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409":
+          description: Email already exists.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/auth/login:
+    post:
+      tags: [auth]
+      summary: Exchange credentials for tokens.
+      description: |
+        Subject to per-IP failed-login throttling and per-account lockout.
+        Returns 401 INVALID_CREDENTIALS on bad password (no account-existence leak),
+        423 ACCOUNT_LOCKED if the account is in lockout window, and
+        429 AUTH_RATE_LIMITED if too many failures from this IP.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 12 }
+      responses:
+        "200":
+          description: Authenticated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: Invalid credentials.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "423":
+          description: Account temporarily locked.
+          headers:
+            Retry-After: { $ref: "#/components/headers/RetryAfter" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "429":
+          description: Too many failed attempts.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /v1/auth/refresh:
+    post:
+      tags: [auth]
+      summary: Rotate an access token using a refresh token.
+      description: |
+        On success, the prior refresh token is revoked and a new pair is issued.
+        On detected reuse of a previously revoked refresh token, all of the
+        user's outstanding refresh tokens are revoked.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string, minLength: 32 }
+      responses:
+        "200":
+          description: New tokens issued.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthTokens" }
+        "401":
+          description: Refresh token invalid, expired, or reuse detected.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /v1/auth/logout:
+    post:
+      tags: [auth]
+      summary: Revoke a specific refresh token.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string, minLength: 32 }
+      responses:
+        "204":
+          description: Token revoked. No body.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/orders:
+    post:
+      tags: [orders]
+      summary: Create a new order for the authenticated user.
+      description: |
+        Inserts the order, an `order.created` outbox row, and an
+        `order_events` audit row in a single Postgres transaction. Bumps the
+        orders-list cache namespace version so list caches across all filter
+        combinations are invalidated atomically. Optionally idempotent via
+        `Idempotency-Key`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [customerEmail, items]
+              properties:
+                customerEmail: { type: string, format: email }
+                items:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items: { $ref: "#/components/schemas/OrderItem" }
+      responses:
+        "201":
+          description: Order created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          description: |
+            Idempotency conflict. `code` is one of:
+              - `IDEMPOTENCY_KEY_CONFLICT` — same key, different body
+              - `IDEMPOTENT_REQUEST_IN_PROGRESS` — concurrent in-flight retry
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+    get:
+      tags: [orders]
+      summary: List the authenticated user's orders, paginated and filtered.
+      description: |
+        Always scoped to `request.user.id`; users cannot see each other's orders.
+        Cached for `CACHE_TTL_SECONDS` (default 60 s) per `(userId + filters + page)`
+        key. The count(*) is cached separately for `CACHE_LIST_COUNT_TTL_SECONDS`
+        (default 300 s) per `(userId + filters)`, so paging through a filtered
+        set does not re-run the count.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: pageSize
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - in: query
+          name: status
+          schema: { $ref: "#/components/schemas/OrderStatus" }
+        - in: query
+          name: customerEmail
+          schema: { type: string, format: email }
+        - in: query
+          name: createdAfter
+          schema: { type: string, format: date-time }
+          description: ISO 8601 with offset, inclusive lower bound on `created_at`.
+        - in: query
+          name: createdBefore
+          schema: { type: string, format: date-time }
+          description: ISO 8601 with offset, inclusive upper bound on `created_at`. Must be >= createdAfter.
+      responses:
+        "200":
+          description: Paginated list.
+          headers:
+            X-Cache: { $ref: "#/components/headers/XCache" }
+            X-Correlation-Id: { $ref: "#/components/headers/XCorrelationId" }
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderListResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /v1/orders/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+
+    get:
+      tags: [orders]
+      summary: Fetch a single order by id.
+      description: |
+        Auth-required; returns 404 if the order does not exist OR is owned by
+        another user (no existence leak). Cached entity payload at `order:<id>`;
+        the ownership check runs after every cache lookup so the cached payload
+        is safely shareable across concurrent callers.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      responses:
+        "200":
+          description: The order.
+          headers:
+            X-Cache: { $ref: "#/components/headers/XCache" }
+            X-Correlation-Id: { $ref: "#/components/headers/XCorrelationId" }
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+    patch:
+      tags: [orders]
+      summary: Update an order's status.
+      description: |
+        Locks the row (`SELECT ... FOR UPDATE`) inside a transaction, validates
+        ownership and the requested transition against the order state machine,
+        writes the UPDATE and an `order_events` audit row in the same transaction,
+        then invalidates the entity cache and bumps the orders-list namespace
+        version. Same-status PATCHes short-circuit to a no-op (no UPDATE, no
+        audit row, no cache bump).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { $ref: "#/components/schemas/OrderStatus" }
+      responses:
+        "200":
+          description: Order after the update (or current state on no-op).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: |
+            Invalid status transition. `code` is `INVALID_STATUS_TRANSITION` and
+            `details` includes `{ from, to, allowed: [...] }` so the client can
+            render a precise error.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /health/live:
+    get:
+      tags: [system]
+      summary: Liveness probe.
+      description: Returns 200 if the process is alive. Excluded from rate limiting.
+      responses:
+        "200":
+          description: Process is alive.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+
+  /health/ready:
+    get:
+      tags: [system]
+      summary: Readiness probe.
+      description: |
+        Returns 200 only when the API is willing to accept new traffic.
+        Returns 503 when the process is in graceful-shutdown drain mode.
+      responses:
+        "200":
+          description: Ready.
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /metrics:
+    get:
+      tags: [system]
+      summary: Prometheus scrape endpoint.
+      description: Plain-text Prometheus exposition format. Excluded from rate limiting.
+      responses:
+        "200":
+          description: Metrics text.
+          content:
+            text/plain:
+              schema: { type: string }

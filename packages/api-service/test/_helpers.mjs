@@ -54,11 +54,16 @@ export function createReplyStub() {
 }
 
 /** Build a minimal ApiContext that satisfies the helpers we test. */
-export function createCtxStub({ cacheEnabled = true, cacheTtlSeconds = 60, cacheTimeoutMs = 200 } = {}) {
+export function createCtxStub({
+  cacheEnabled = true,
+  cacheTtlSeconds = 60,
+  cacheTimeoutMs = 200,
+  cacheListCountTtlSeconds = 300,
+} = {}) {
   const warnings = [];
   return {
     warnings,
-    config: { cacheEnabled, cacheTtlSeconds, cacheTimeoutMs },
+    config: { cacheEnabled, cacheTtlSeconds, cacheTimeoutMs, cacheListCountTtlSeconds },
     redis: createRedisStub(),
     warnOncePerMinute(key, message, error) {
       warnings.push({ key, message, error });

@@ -1,12 +1,21 @@
 import { spawnSync } from "node:child_process";
 
-const replicasIndex = process.argv.indexOf("--replicas");
-const replicas = replicasIndex >= 0 ? process.argv[replicasIndex + 1] : undefined;
+const MAX_REPLICAS = 16;
 
-if (replicas !== "1" && replicas !== "4") {
-  console.error("Usage: pnpm run stack:up -- --replicas <1|4>");
+const replicasIndex = process.argv.indexOf("--replicas");
+const replicasArg = replicasIndex >= 0 ? process.argv[replicasIndex + 1] : undefined;
+const parsedReplicas = Number.parseInt(replicasArg ?? "", 10);
+
+if (!Number.isFinite(parsedReplicas) || parsedReplicas < 1 || parsedReplicas > MAX_REPLICAS) {
+  console.error(`Usage: pnpm run stack:up -- --replicas <1..${MAX_REPLICAS}>`);
+  console.error(
+    "  HAProxy reserves 16 backend slots; raise the server-template count in",
+  );
+  console.error("  infra/haproxy/haproxy.cfg if you ever need to exceed that.");
   process.exit(1);
 }
+
+const replicas = String(parsedReplicas);
 
 const compose = ["compose", "-f", "infra/docker-compose.yml"];
 

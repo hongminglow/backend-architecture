@@ -11,6 +11,7 @@ export interface ApiConfig {
   cacheEnabled: boolean;
   cacheTtlSeconds: number;
   cacheTimeoutMs: number;
+  cacheListCountTtlSeconds: number;
   rateLimitRequests: number;
   rateLimitWindowSeconds: number;
   failedLoginIpLimit: number;
@@ -40,6 +41,7 @@ export function loadConfig(): ApiConfig {
     cacheEnabled: optionalBoolEnv("CACHE_ENABLED", true),
     cacheTtlSeconds: optionalIntEnv("CACHE_TTL_SECONDS", 60),
     cacheTimeoutMs: optionalIntEnv("CACHE_TIMEOUT_MS", 200),
+    cacheListCountTtlSeconds: optionalIntEnv("CACHE_LIST_COUNT_TTL_SECONDS", 300),
     rateLimitRequests: optionalIntEnv("RATE_LIMIT_REQUESTS", 100),
     rateLimitWindowSeconds: optionalIntEnv("RATE_LIMIT_WINDOW_SECONDS", 60),
     failedLoginIpLimit: optionalIntEnv("AUTH_FAILED_LOGIN_IP_LIMIT", 10),

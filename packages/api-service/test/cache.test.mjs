@@ -6,6 +6,7 @@ import {
   cacheBumpNamespaceVersion,
   invalidateEntity,
   invalidateListNamespace,
+  withCountCache,
   withEntityCache,
   withListCache,
 } from "../dist/utils/cache.js";
@@ -216,5 +217,89 @@ describe("invalidateEntity", () => {
     await ctx.redis.set("order:abc", "should-stay", "EX", 60);
     await invalidateEntity(ctx, { key: "order:abc", namespace: "order" });
     assert.equal(await ctx.redis.get("order:abc"), "should-stay");
+  });
+});
+
+
+
+describe("withCountCache", () => {
+  it("calls the fetcher on first request and caches the result", async () => {
+    const ctx = createCtxStub();
+    let calls = 0;
+    const fetcher = async () => {
+      calls++;
+      return 42;
+    };
+    const v1 = await withCountCache(ctx, { namespace: "test", query: {} }, fetcher);
+    const v2 = await withCountCache(ctx, { namespace: "test", query: {} }, fetcher);
+    assert.equal(v1, 42);
+    assert.equal(v2, 42);
+    assert.equal(calls, 1, "fetcher should run only once for identical filters");
+  });
+
+  it("treats different filters as different cache keys", async () => {
+    const ctx = createCtxStub();
+    let calls = 0;
+    const fetcher = async () => {
+      calls++;
+      return calls;
+    };
+    await withCountCache(ctx, { namespace: "test", query: { status: "pending" } }, fetcher);
+    await withCountCache(ctx, { namespace: "test", query: { status: "shipped" } }, fetcher);
+    assert.equal(calls, 2);
+  });
+
+  it("shares the namespace version with the list cache, so invalidate clears both", async () => {
+    const ctx = createCtxStub();
+    let counts = 0;
+    let pages = 0;
+    const reply = createReplyStub();
+
+    // Prime both caches
+    await withCountCache(ctx, { namespace: "test", query: {} }, async () => {
+      counts++;
+      return 10;
+    });
+    await withListCache(ctx, { namespace: "test", query: { page: 1 }, reply }, async () => {
+      pages++;
+      return { items: [], total: 10 };
+    });
+
+    // Bump the namespace once -> both caches must miss next time
+    await invalidateListNamespace(ctx, "test");
+
+    await withCountCache(ctx, { namespace: "test", query: {} }, async () => {
+      counts++;
+      return 11;
+    });
+    await withListCache(ctx, { namespace: "test", query: { page: 1 }, reply: createReplyStub() }, async () => {
+      pages++;
+      return { items: [], total: 11 };
+    });
+
+    assert.equal(counts, 2, "count cache must be invalidated by the namespace bump");
+    assert.equal(pages, 2, "list cache must be invalidated by the namespace bump");
+  });
+
+  it("bypasses the cache when cacheEnabled=false", async () => {
+    const ctx = createCtxStub({ cacheEnabled: false });
+    let calls = 0;
+    const fetcher = async () => {
+      calls++;
+      return 7;
+    };
+    await withCountCache(ctx, { namespace: "test", query: {} }, fetcher);
+    await withCountCache(ctx, { namespace: "test", query: {} }, fetcher);
+    assert.equal(calls, 2);
+  });
+
+  it("falls back to the fetcher when redis throws on read", async () => {
+    const ctx = createCtxStub();
+    ctx.redis.get = async () => {
+      throw new Error("connection refused");
+    };
+    const result = await withCountCache(ctx, { namespace: "test", query: {} }, async () => 99);
+    assert.equal(result, 99);
+    assert.ok(ctx.warnings.some((w) => w.key.includes("count")));
   });
 });

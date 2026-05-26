@@ -237,6 +237,80 @@ export async function withEntityCache<T>(
   return result;
 }
 
+export interface CountCacheOptions {
+  /**
+   * Logical namespace, typically the same as the corresponding list namespace
+   * (e.g. `CACHE_NAMESPACES.ordersList`). The count cache shares the namespace
+   * version, so `invalidateListNamespace` invalidates both the list pages and
+   * the cached count atomically.
+   */
+  namespace: string;
+  /**
+   * The filter-only subset of the list query (page/pageSize must be excluded).
+   * Two list pages with identical filters share a single cached count.
+   */
+  query: Record<string, unknown>;
+  /** Override the default `cacheListCountTtlSeconds`. */
+  ttlSeconds?: number;
+}
+
+/**
+ * Cache an expensive scalar (typically a `count(*)`) under the same namespace
+ * as the corresponding list cache, with a separate, longer TTL.
+ *
+ * Why a separate cache: `withListCache` keys responses by page/pageSize, so
+ * /v1/orders?page=1 and ?page=2 are different cache entries. Their count is
+ * identical, though, so caching the count once per filter combination amortizes
+ * the count(*) cost across every page of the same filtered set.
+ *
+ * Because the cache key embeds the namespace version, bumping the namespace
+ * via `invalidateListNamespace` invalidates the count alongside the list.
+ */
+export async function withCountCache(
+  ctx: ApiContext,
+  options: CountCacheOptions,
+  fetcher: () => Promise<number>,
+): Promise<number> {
+  if (!ctx.config.cacheEnabled) {
+    return fetcher();
+  }
+
+  const ttl = options.ttlSeconds ?? ctx.config.cacheListCountTtlSeconds;
+  let cacheKey: string | null = null;
+  try {
+    const version = await cacheGetNamespaceVersion(ctx, options.namespace);
+    cacheKey = buildCountCacheKey(options.namespace, version, options.query);
+    const cached = await cacheGet(ctx, cacheKey);
+    if (cached !== null) {
+      const parsed = Number.parseInt(cached, 10);
+      if (Number.isFinite(parsed) && parsed >= 0) {
+        return parsed;
+      }
+    }
+  } catch (error) {
+    ctx.warnOncePerMinute(
+      `cache-read-${options.namespace}-count`,
+      `${options.namespace} count cache read failed; computing fresh count`,
+      error,
+    );
+    cacheKey = null;
+  }
+
+  const value = await fetcher();
+  if (cacheKey !== null) {
+    try {
+      await cacheSet(ctx, cacheKey, String(value), ttl);
+    } catch (error) {
+      ctx.warnOncePerMinute(
+        `cache-write-${options.namespace}-count`,
+        `${options.namespace} count cache write failed; result still served`,
+        error,
+      );
+    }
+  }
+  return value;
+}
+
 // ===================================================================
 // Invalidation helpers (write-path)
 // ===================================================================
@@ -308,4 +382,23 @@ function buildListCacheKey(
     return `${key}=${encoded}`;
   });
   return `${namespace}:v${version}:${parts.join(":")}`;
+}
+
+/**
+ * Cache key for a count scalar associated with a list namespace. The `:count:`
+ * segment prevents collisions with list page entries that use the same
+ * namespace and version prefix.
+ */
+function buildCountCacheKey(
+  namespace: string,
+  version: number,
+  query: Record<string, unknown>,
+): string {
+  const sortedKeys = Object.keys(query).sort();
+  const parts = sortedKeys.map((key) => {
+    const raw = query[key];
+    const encoded = raw === undefined || raw === null ? "*" : encodeURIComponent(String(raw));
+    return `${key}=${encoded}`;
+  });
+  return `${namespace}:count:v${version}:${parts.join(":")}`;
 }
