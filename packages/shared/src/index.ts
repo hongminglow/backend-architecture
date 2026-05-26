@@ -2,6 +2,27 @@ export const orderStatuses = ["pending", "confirmed", "shipped", "delivered", "c
 
 export type OrderStatus = (typeof orderStatuses)[number];
 
+/**
+ * Allowed order status transitions. Terminal statuses (`delivered`, `cancelled`)
+ * have no outgoing transitions. A transition from a status to itself is a
+ * no-op and is allowed by `isAllowedOrderStatusTransition`.
+ */
+export const orderStatusTransitions: Readonly<Record<OrderStatus, readonly OrderStatus[]>> = {
+  pending: ["confirmed", "cancelled"],
+  confirmed: ["shipped", "cancelled"],
+  shipped: ["delivered"],
+  delivered: [],
+  cancelled: [],
+};
+
+/** Returns true when `from` may transition to `to`, or when they are equal. */
+export function isAllowedOrderStatusTransition(from: OrderStatus, to: OrderStatus): boolean {
+  if (from === to) {
+    return true;
+  }
+  return orderStatusTransitions[from].includes(to);
+}
+
 export interface OrderItem {
   sku: string;
   quantity: number;

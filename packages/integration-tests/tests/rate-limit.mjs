@@ -11,17 +11,23 @@
  * Run: pnpm run test:integration
  */
 
-import { describe, it } from "node:test";
+import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
+import { registerTestUser } from "./helpers.mjs";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:8080";
 
 // Use a unique client identity per test run so we don't collide with other tests.
 const CLIENT_ID = `rate-limit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
+let accessToken;
+
 async function rateLimitedGet(path) {
   const response = await fetch(`${BASE_URL}${path}`, {
-    headers: { "X-Load-Test-Client-Id": CLIENT_ID },
+    headers: {
+      "X-Load-Test-Client-Id": CLIENT_ID,
+      Authorization: `Bearer ${accessToken}`,
+    },
   });
   const text = await response.text();
   let body = null;
@@ -39,6 +45,14 @@ async function rateLimitedGet(path) {
 }
 
 describe("Rate Limiting", () => {
+  before(async () => {
+    // GET /v1/orders requires auth and is scoped per user, so we need a token.
+    // Registration uses the default `integration-tests` client identity, so it
+    // does not consume budget from this test's unique CLIENT_ID bucket.
+    const user = await registerTestUser();
+    accessToken = user.accessToken;
+  });
+
   it("should return rate-limit headers on normal requests", async () => {
     const result = await rateLimitedGet("/v1/orders?page=1&pageSize=1");
     assert.equal(result.status, 200);

@@ -119,7 +119,9 @@ describe("Order Lifecycle", () => {
   });
 
   it("should return the order via GET", async () => {
-    const result = await getApi(`/v1/orders/${orderId}`);
+    const result = await getApi(`/v1/orders/${orderId}`, {
+      Authorization: `Bearer ${accessToken}`,
+    });
     assert.equal(result.status, 200);
     assert.equal(result.body.order.id, orderId);
     assert.equal(result.body.order.status, "pending");
