@@ -107,8 +107,9 @@ Expected checks:
 ```powershell
 pnpm run typecheck
 pnpm run lint
+pnpm run test
 pnpm run test:integration
 docker compose -f infra/docker-compose.yml config
 ```
 
-The current live integration suite covers order lifecycle, cache invalidation, rate limiting, correlation IDs, and DLQ behavior.
+`pnpm run test` runs unit tests for the cache, idempotency, and pagination helpers (38 tests across 17 suites at last count). The live integration suite covers order lifecycle, cache invalidation, rate limiting, correlation IDs, and DLQ behavior, and requires the Docker Compose stack to be running. After pulling schema changes, run `pnpm run migrate` against the live Postgres before re-running the integration suite.

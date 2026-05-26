@@ -22,6 +22,12 @@ This guide records the main backend architecture decisions, why they were made, 
 | 0014 | Distributed correlation IDs            | MVP   | outbox payload and RabbitMQ headers preserve correlation ID        |
 | 0015 | Integration test harness               | MVP   | `pnpm run test:integration`                                        |
 | 0016 | Worker prefetch backpressure           | MVP   | in-flight gauge stays within configured prefetch                   |
+| 0017 | Auth-scoped order reads                | MVP   | unauthenticated GETs return 401; cross-user GETs return 404        |
+| 0018 | Idempotency-Key for unsafe writes      | MVP   | POST replays return cached response; conflicts return 409          |
+| 0019 | Order status state machine             | MVP   | illegal transitions return 422 with allowed list                   |
+| 0020 | Statement and idle-in-transaction timeouts | MVP | slow queries killed by Postgres; orphaned locks reaped              |
+| 0021 | Order events audit trail               | MVP   | `order_events` row written in same txn as POST/PATCH               |
+| 0022 | Hand-curated OpenAPI 3.1 spec          | MVP   | `docs/api/openapi.yaml` is the source of truth for the contract    |
 
 ## ADR-0001: Order Platform Domain
 
@@ -134,3 +140,47 @@ This guide records the main backend architecture decisions, why they were made, 
 - **Why:** Prefetch controls throughput, memory pressure, and work distribution.
 - **Alternatives:** Dynamic prefetch is more sophisticated but unnecessary for MVP.
 - **Tradeoff:** Operators must tune the value for workload shape.
+
+
+
+## ADR-0017: Auth-Scoped Order Reads
+
+- **Decision:** `GET /v1/orders` and `GET /v1/orders/:id` require a bearer token, and every order query is filtered by `user_id = request.user.id`. Cross-user access returns 404 (not 403).
+- **Why:** Customer emails and order contents are PII. Without auth and scoping, any caller could enumerate every order in the system.
+- **Alternatives:** Auth without scoping (still leaks cross-user data via id guessing). 403 on cross-user access (leaks existence of someone else's order id).
+- **Tradeoff:** The list cache key now embeds `userId`, so a write by one user's POST bumps a namespace shared with every other user's list cache. Acceptable until metrics show the cross-user invalidation is hot; mitigation later is per-user cache namespaces.
+
+## ADR-0018: Idempotency-Key for Unsafe Writes
+
+- **Decision:** `POST /v1/orders` accepts an optional `Idempotency-Key` header. First request is processed and the response cached for 24 h. Replays with the same body return the cached response; replays with a different body return 409 `IDEMPOTENCY_KEY_CONFLICT`. Concurrent in-flight requests with the same key return 409 `IDEMPOTENT_REQUEST_IN_PROGRESS`. Helper lives in `utils/idempotency.ts` and is reusable for any future POST/PUT/PATCH.
+- **Why:** Mobile and web clients retry on flaky networks. Without idempotency, every retry creates a duplicate order. For an order product, duplicates translate directly into duplicate fulfillment and refunds.
+- **Alternatives:** Required keys (breaking change for existing clients). DB-backed idempotency table (more durable but heavier than the per-request reliability bar warrants for the MVP).
+- **Tradeoff:** Redis is the source of truth for replay protection; if Redis is unavailable the helper degrades to "fail the write" rather than "process without protection," because losing idempotency on writes silently is worse than a transient 5xx the client can retry.
+
+## ADR-0019: Order Status State Machine
+
+- **Decision:** `PATCH /v1/orders/:id` validates transitions against an explicit allowed-edge map. Illegal transitions return 422 `INVALID_STATUS_TRANSITION` with `details: { from, to, allowed }`. The PATCH runs inside a Postgres transaction with `SELECT ... FOR UPDATE` so concurrent PATCHes can't race. Same-status PATCHes short-circuit to a no-op (no UPDATE, no audit row, no cache bump).
+- **Why:** The previous PATCH accepted any status → any status, which corrupts business data (`shipped → pending` is meaningless).
+- **Alternatives:** Database-level CHECK constraint on transitions (Postgres has no native state-machine constraint; would require a trigger). Optimistic concurrency via a version column (more refactoring than this MVP needs).
+- **Tradeoff:** The transition map lives in the shared package, so workers and other services share it. Adding new statuses or edges is a code change, not a config change — appropriate for a small fixed set, would need rethinking if statuses became data-driven.
+
+## ADR-0020: Statement and Idle-in-Transaction Timeouts
+
+- **Decision:** API, outbox publisher, and worker all set `statement_timeout`, `idle_in_transaction_session_timeout`, `connectionTimeoutMillis`, and a bounded pool max on every Postgres connection. Defaults: API 5 s / 10 s / 5 s / 20; outbox 10 s / 30 s / 5 s / 5; worker 15 s / 30 s / 5 s / 5. All four knobs are env-tunable per service.
+- **Why:** Without server-enforced timeouts, a slow query during a load spike piles requests up in the API process and exhausts the pool. With `SELECT ... FOR UPDATE` now in PATCH, an idle-in-transaction kill is necessary to reap orphaned row locks if the API process crashes mid-transaction.
+- **Alternatives:** Client-side `query_timeout` only (does not actually cancel the query in Postgres, just stops waiting for it). Per-query timeout overrides (more granular but more knobs to tune).
+- **Tradeoff:** Timeouts must be tuned per workload — too aggressive and legitimate slow batches fail; too loose and pile-ups still happen. The per-service defaults reflect the differing query shapes (API is interactive, worker is batch-y).
+
+## ADR-0021: Order Events Audit Trail
+
+- **Decision:** `order_events` table records `(order_id, event_type, from_status, to_status, actor_user_id, occurred_at, metadata)` for every order create and status change. Rows are inserted in the same Postgres transaction as the POST/PATCH that triggers them, so the audit log can never desync from order state.
+- **Why:** Customer support and dispute resolution need a reliable history of what happened to an order, who triggered it, and when. The existing `outbox_events` table only records the original `order.created` event and is purged after publishing.
+- **Alternatives:** Postgres logical replication + change-data-capture into an external log (heavier, eventual consistency, harder to query inline). Generic event-sourcing model (overkill for the order surface).
+- **Tradeoff:** No API surface yet — support reads the table directly via SQL. When a customer-facing "order timeline" feature is requested, it'll be a small read-only `GET /v1/orders/:id/events` endpoint reusing `withListCache`.
+
+## ADR-0022: Hand-Curated OpenAPI 3.1 Spec
+
+- **Decision:** API contract is documented in `docs/api/openapi.yaml`, written by hand, covering all 11 endpoints with shared schemas, security scheme, parameters, headers, and error envelopes.
+- **Why:** External viewers (Swagger Editor, Redoc, Postman import) need a contract document. Auto-generation via `@fastify/swagger` + `fastify-type-provider-zod` would require migrating every route to attach Fastify schemas, which is a meaningful refactor outside the scope of the LOW batch.
+- **Alternatives:** No spec at all (current state without this decision). Auto-generation now (correct long-term answer, but a refactor not justified yet).
+- **Tradeoff:** Hand-written specs go stale. The README documentation map and the spec itself note that auto-generation is the planned replacement once routes adopt Fastify schemas. Until then, the YAML is checked in alongside the code so PRs that change route shape can update the spec in the same diff.

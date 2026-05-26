@@ -38,6 +38,7 @@ The current MVP runs through Docker Compose:
 | Version updates, dependency updates, and release checks    | [Versioning Guide](docs/versioning.md)                            |
 | Architecture decisions with tradeoffs                      | [Architecture Decisions](docs/architecture/decisions.md)          |
 | Request-flow explanation                                   | [Architecture Request Flow](docs/architecture/request-flow.md)    |
+| API contract (OpenAPI 3.1)                                 | [docs/api/openapi.yaml](docs/api/openapi.yaml)                    |
 | Architecture decision presentation                         | [PowerPoint Deck](docs/decks/backend-architecture-decisions.pptx) |
 
 The root [ARCHITECTURE.md](ARCHITECTURE.md) remains the short commit-facing architecture entry point. The `.kiro/specs/backend-architecture-playground` files are working spec notes and are intentionally ignored from commits.
@@ -61,6 +62,8 @@ Start the MVP with four API replicas:
 ```powershell
 pnpm run stack:up -- --replicas 4
 ```
+
+`--replicas` accepts any integer in `[1, 16]`; HAProxy reserves 16 backend slots and marks unfilled ones DOWN until they're scaled up.
 
 Stop the stack:
 
@@ -99,8 +102,11 @@ The current MVP should pass:
 ```powershell
 pnpm run typecheck
 pnpm run lint
+pnpm run test
 pnpm run test:integration
 docker compose -f infra/docker-compose.yml config
 ```
+
+`pnpm run test` runs the unit suites in each package (currently the `api-service` cache, idempotency, and pagination helpers). `pnpm run test:integration` requires the Docker Compose stack to be running. After pulling new schema changes, run `pnpm run migrate` against the live Postgres.
 
 For full manual test steps and API request bodies, use the [Testing Guide](docs/testing.md).
