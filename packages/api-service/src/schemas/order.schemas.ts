@@ -1,5 +1,6 @@
 import { orderStatuses } from "@backend-architect/shared";
 import { z } from "zod";
+import { paginationQueryFields } from "../utils/pagination.js";
 import { emailSchema } from "./auth.schemas.js";
 
 const orderItemSchema = z.object({
@@ -17,10 +18,24 @@ export const orderIdParamsSchema = z.object({
   id: z.string().uuid(),
 });
 
-export const listOrdersQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
-});
+export const listOrdersQuerySchema = z
+  .object({
+    ...paginationQueryFields,
+    status: z.enum(orderStatuses).optional(),
+    customerEmail: emailSchema.optional(),
+    createdAfter: z.string().datetime({ offset: true }).optional(),
+    createdBefore: z.string().datetime({ offset: true }).optional(),
+  })
+  .refine(
+    (value) =>
+      !value.createdAfter ||
+      !value.createdBefore ||
+      new Date(value.createdAfter).getTime() <= new Date(value.createdBefore).getTime(),
+    {
+      path: ["createdBefore"],
+      message: "createdBefore must be greater than or equal to createdAfter",
+    },
+  );
 
 export const patchOrderSchema = z.object({
   status: z.enum(orderStatuses),
