@@ -13,6 +13,12 @@ min_pool_size = ${PGBOUNCER_MIN_POOL_SIZE}
 reserve_pool_size = ${PGBOUNCER_RESERVE_POOL_SIZE}
 server_reset_query = DISCARD ALL
 ignore_startup_parameters = extra_float_digits
+# Cache per-client and replay on each server connection. The api-service pg
+# Pool sends `statement_timeout` and `idle_in_transaction_session_timeout` as
+# Postgres startup parameters; without tracking them here, PgBouncer (in
+# transaction pool mode) would reject the connection. With them tracked, the
+# values are actually enforced on every backend query rather than discarded.
+track_extra_parameters = statement_timeout, idle_in_transaction_session_timeout
 admin_users = ${POSTGRES_USER}
 stats_users = ${POSTGRES_USER}
 pidfile = /tmp/pgbouncer.pid

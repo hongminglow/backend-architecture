@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 
 const MAX_REPLICAS = 16;
+const WAIT_TIMEOUT_SECONDS = 180;
 
 const replicasIndex = process.argv.indexOf("--replicas");
 const replicasArg = replicasIndex >= 0 ? process.argv[replicasIndex + 1] : undefined;
@@ -8,16 +9,17 @@ const parsedReplicas = Number.parseInt(replicasArg ?? "", 10);
 
 if (!Number.isFinite(parsedReplicas) || parsedReplicas < 1 || parsedReplicas > MAX_REPLICAS) {
   console.error(`Usage: pnpm run stack:up -- --replicas <1..${MAX_REPLICAS}>`);
-  console.error(
-    "  HAProxy reserves 16 backend slots; raise the server-template count in",
-  );
+  console.error("  HAProxy reserves 16 backend slots; raise the server-template count in");
   console.error("  infra/haproxy/haproxy.cfg if you ever need to exceed that.");
   process.exit(1);
 }
 
 const replicas = String(parsedReplicas);
-
-const compose = ["compose", "-f", "infra/docker-compose.yml"];
+// `--progress plain` is a top-level docker-compose flag (must precede the
+// subcommand). It produces line-based build/start output instead of the
+// default sticky TUI that constantly redraws each container's state — that
+// redraw is what looked like spam in terminals without proper cursor support.
+const compose = ["compose", "--progress", "plain", "-f", "infra/docker-compose.yml"];
 
 function runDocker(args, options = {}) {
   const result = spawnSync("docker", args, {
@@ -35,93 +37,33 @@ function runDocker(args, options = {}) {
   return result.stdout ?? "";
 }
 
-function parsePsJson(output) {
-  const trimmed = output.trim();
-  if (!trimmed) {
-    return [];
-  }
-
-  if (trimmed.startsWith("[")) {
-    return JSON.parse(trimmed);
-  }
-
-  return trimmed
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
-}
-
-function allRequiredHealthy(containers) {
-  const required = [
-    "api-service",
-    "outbox-publisher",
-    "worker-service",
-    "postgres",
-    "pgbouncer",
-    "redis",
-    "rabbitmq",
-    "reverse-proxy",
-    "prometheus",
-    "grafana",
-  ];
-
-  const failures = [];
-  for (const service of required) {
-    const matches = containers.filter((container) => container.Service === service);
-    if (matches.length === 0) {
-      failures.push(`${service}: missing`);
-      continue;
-    }
-
-    for (const container of matches) {
-      if (container.State !== "running") {
-        failures.push(`${container.Name}: ${container.State}`);
-        continue;
-      }
-
-      if (container.Health && container.Health !== "healthy") {
-        failures.push(`${container.Name}: ${container.Health}`);
-      }
-    }
-  }
-
-  return failures;
-}
-
 console.log(`Starting Backend Architecture Playground with ${replicas} API replica(s)...`);
-runDocker([...compose, "up", "-d", "--build", "--scale", `api-service=${replicas}`]);
 
-const deadline = Date.now() + 180_000;
-let lastFailures = [];
-while (Date.now() < deadline) {
-  const output = runDocker([...compose, "ps", "--format", "json"], { capture: true });
-  const failures = allRequiredHealthy(parsePsJson(output));
-  if (failures.length === 0) {
-    const postgresPort = runDocker([...compose, "port", "postgres", "5432"], {
-      capture: true,
-    }).trim();
-    const pgbouncerPort = runDocker([...compose, "port", "pgbouncer", "6432"], {
-      capture: true,
-    }).trim();
+// `--wait` blocks until every container with a healthcheck reports healthy (or
+// the timeout expires) and exits non-zero on failure, replacing the manual
+// `docker compose ps` polling loop this script used to run.
+runDocker([
+  ...compose,
+  "up",
+  "-d",
+  "--build",
+  "--wait",
+  "--wait-timeout",
+  String(WAIT_TIMEOUT_SECONDS),
+  "--scale",
+  `api-service=${replicas}`,
+]);
 
-    console.log("Stack is ready.");
-    console.log("API: http://localhost:8080");
-    console.log(`Postgres: ${postgresPort}`);
-    console.log(`PgBouncer: ${pgbouncerPort}`);
-    console.log("Grafana: http://localhost:3001 (admin/admin)");
-    console.log("Prometheus: http://localhost:9090");
-    console.log(
-      "RabbitMQ management: http://localhost:15672 (playground/CHANGE_ME_RABBITMQ_PASSWORD)",
-    );
-    process.exit(0);
-  }
+const postgresPort = runDocker([...compose, "port", "postgres", "5432"], { capture: true }).trim();
+const pgbouncerPort = runDocker([...compose, "port", "pgbouncer", "6432"], { capture: true }).trim();
 
-  lastFailures = failures;
-  await new Promise((resolve) => setTimeout(resolve, 5000));
-}
-
-console.error("Stack did not become ready within 180 seconds.");
-for (const failure of lastFailures) {
-  console.error(`- ${failure}`);
-}
-process.exit(1);
+console.log("");
+console.log("Stack is ready.");
+console.log(`  API:                 http://localhost:8080`);
+console.log(`  Swagger UI:          http://localhost:8080/docs`);
+console.log(`  HAProxy stats:       http://localhost:8404/stats`);
+console.log(`  Postgres:            ${postgresPort}`);
+console.log(`  PgBouncer:           ${pgbouncerPort}`);
+console.log(`  Grafana:             http://localhost:3001 (admin/admin)`);
+console.log(`  Prometheus:          http://localhost:9090`);
+console.log(`  RabbitMQ management: http://localhost:15672 (playground/CHANGE_ME_RABBITMQ_PASSWORD)`);
