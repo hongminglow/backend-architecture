@@ -88,6 +88,7 @@ pnpm run test:integration
 | Endpoint                      | Use                                                               |
 | ----------------------------- | ----------------------------------------------------------------- |
 | `http://localhost:8080`       | API through HAProxy                                               |
+| `http://localhost:8080/docs`  | Swagger UI for the OpenAPI 3.1 contract                           |
 | `http://localhost:8404/stats` | HAProxy stats                                                     |
 | `127.0.0.1:15432`             | Postgres SQL access                                               |
 | `127.0.0.1:16432`             | PgBouncer SQL access                                              |

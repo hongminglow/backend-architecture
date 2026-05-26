@@ -20,5 +20,8 @@ COPY packages/api-service/package.json packages/api-service/package.json
 RUN pnpm install --prod --frozen-lockfile=false
 COPY --from=build /app/packages/shared/dist packages/shared/dist
 COPY --from=build /app/packages/api-service/dist packages/api-service/dist
+# OpenAPI spec is loaded at runtime by @fastify/swagger to serve /docs.
+# Path must match the import.meta.dirname-based resolution in app.ts.
+COPY docs/api/openapi.yaml docs/api/openapi.yaml
 USER node
 CMD ["node", "packages/api-service/dist/index.js"]

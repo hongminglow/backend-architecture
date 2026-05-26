@@ -7,7 +7,12 @@ export function createRateLimitHook(ctx: ApiContext) {
     request: FastifyRequest,
     reply: FastifyReply,
   ): Promise<void> {
-    if (request.url.startsWith("/health") || request.url === "/metrics") {
+    if (
+      request.url.startsWith("/health") ||
+      request.url === "/metrics" ||
+      request.url === "/docs" ||
+      request.url.startsWith("/docs/")
+    ) {
       return;
     }
 
