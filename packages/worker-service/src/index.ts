@@ -33,9 +33,19 @@ const config = {
   retryDelayMs: optionalIntEnv("WORKER_RETRY_DELAY_MS", 5000),
   prefetch: optionalIntEnv("WORKER_PREFETCH", 20),
   maxRetries: optionalIntEnv("WORKER_MAX_RETRIES", 3),
+  dbPoolMax: optionalIntEnv("DB_POOL_MAX", 5),
+  dbStatementTimeoutMs: optionalIntEnv("DB_STATEMENT_TIMEOUT_MS", 15_000),
+  dbIdleInTransactionTimeoutMs: optionalIntEnv("DB_IDLE_IN_TRANSACTION_TIMEOUT_MS", 30_000),
+  dbConnectionTimeoutMs: optionalIntEnv("DB_CONNECTION_TIMEOUT_MS", 5_000),
 };
 
-const pool = new Pool({ connectionString: config.databaseUrl, max: 5 });
+const pool = new Pool({
+  connectionString: config.databaseUrl,
+  max: config.dbPoolMax,
+  statement_timeout: config.dbStatementTimeoutMs,
+  idle_in_transaction_session_timeout: config.dbIdleInTransactionTimeoutMs,
+  connectionTimeoutMillis: config.dbConnectionTimeoutMs,
+});
 let connection: ChannelModel | null = null;
 let channel: Channel | null = null;
 let consumerTag: string | null = null;

@@ -22,6 +22,10 @@ export interface ApiConfig {
   allowLoadTestClientIdentity: boolean;
   loadTestClientIdHeader: string;
   corsAllowedOrigins: string[];
+  dbPoolMax: number;
+  dbStatementTimeoutMs: number;
+  dbIdleInTransactionTimeoutMs: number;
+  dbConnectionTimeoutMs: number;
 }
 
 export function loadConfig(): ApiConfig {
@@ -55,5 +59,9 @@ export function loadConfig(): ApiConfig {
       .split(",")
       .map((origin) => origin.trim())
       .filter(Boolean),
+    dbPoolMax: optionalIntEnv("DB_POOL_MAX", 20),
+    dbStatementTimeoutMs: optionalIntEnv("DB_STATEMENT_TIMEOUT_MS", 5_000),
+    dbIdleInTransactionTimeoutMs: optionalIntEnv("DB_IDLE_IN_TRANSACTION_TIMEOUT_MS", 10_000),
+    dbConnectionTimeoutMs: optionalIntEnv("DB_CONNECTION_TIMEOUT_MS", 5_000),
   };
 }

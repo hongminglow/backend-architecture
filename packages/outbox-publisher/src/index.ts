@@ -29,6 +29,10 @@ const config = {
   exchange: process.env.RABBITMQ_EXCHANGE ?? "orders",
   batchSize: optionalIntEnv("OUTBOX_BATCH_SIZE", 100),
   pollIntervalMs: optionalIntEnv("OUTBOX_POLL_INTERVAL_MS", 1000),
+  dbPoolMax: optionalIntEnv("DB_POOL_MAX", 5),
+  dbStatementTimeoutMs: optionalIntEnv("DB_STATEMENT_TIMEOUT_MS", 10_000),
+  dbIdleInTransactionTimeoutMs: optionalIntEnv("DB_IDLE_IN_TRANSACTION_TIMEOUT_MS", 30_000),
+  dbConnectionTimeoutMs: optionalIntEnv("DB_CONNECTION_TIMEOUT_MS", 5_000),
 };
 
 interface OutboxRow {
@@ -38,7 +42,13 @@ interface OutboxRow {
   attempts: number;
 }
 
-const pool = new Pool({ connectionString: config.databaseUrl, max: 5 });
+const pool = new Pool({
+  connectionString: config.databaseUrl,
+  max: config.dbPoolMax,
+  statement_timeout: config.dbStatementTimeoutMs,
+  idle_in_transaction_session_timeout: config.dbIdleInTransactionTimeoutMs,
+  connectionTimeoutMillis: config.dbConnectionTimeoutMs,
+});
 let connection: ChannelModel | null = null;
 let channel: ConfirmChannel | null = null;
 let shuttingDown = false;

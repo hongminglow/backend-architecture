@@ -48,6 +48,11 @@ export async function cacheDelete(ctx: ApiContext, key: string): Promise<void> {
  * Returns the current monotonic version counter for a logical cache namespace.
  * Used by `withListCache` to embed a version in cache keys, so bumping the
  * counter invalidates every cached page/filter combination at once.
+ *
+ * Returns 0 when the namespace has never been bumped. INCR on a missing Redis
+ * key returns 1 (initialized from 0), so starting the read-side default at 0
+ * guarantees the first invalidation visibly changes the version (0 → 1) and
+ * actually invalidates entries cached during the cold-start window.
  */
 export async function cacheGetNamespaceVersion(
   ctx: ApiContext,
@@ -58,10 +63,10 @@ export async function cacheGetNamespaceVersion(
     ctx.config.cacheTimeoutMs,
   );
   if (!raw) {
-    return 1;
+    return 0;
   }
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 }
 
 /** Atomically increments the namespace version. Returns the new version. */

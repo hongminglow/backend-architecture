@@ -208,6 +208,13 @@ export function registerOrderRoutes(
           [params.data.id, targetStatus],
         );
         order = updated.rows[0];
+        // Audit row is written in the same transaction so support tooling can
+        // never see a status change without its corresponding event row.
+        await client.query(
+          `INSERT INTO order_events (id, order_id, event_type, from_status, to_status, actor_user_id)
+           VALUES ($1, $2, 'status_changed', $3, $4, $5)`,
+          [randomUUID(), params.data.id, current.status, targetStatus, user.id],
+        );
       }
       await client.query("COMMIT");
 
@@ -254,6 +261,11 @@ async function createOrderTransactionally(
        VALUES ($1, $2, lower($3), $4::jsonb, $5, 'pending')
        RETURNING ${ORDER_FIELDS}`,
       [orderId, userId, data.customerEmail, JSON.stringify(data.items), totalCents],
+    );
+    await client.query(
+      `INSERT INTO order_events (id, order_id, event_type, from_status, to_status, actor_user_id)
+       VALUES ($1, $2, 'created', NULL, 'pending', $3)`,
+      [randomUUID(), orderId, userId],
     );
     await client.query(
       `INSERT INTO outbox_events (id, event_type, aggregate_type, aggregate_id, payload, occurred_at)
